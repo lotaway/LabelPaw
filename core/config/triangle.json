@@ -1,0 +1,49 @@
+{
+    "name": "Triangle",
+    "label": "triangle",
+    "description": "3-point triangle template",
+    "kpt_shape": [
+        3,
+        3
+    ],
+    "keypoints": [
+        {
+            "name": "top",
+            "color": "#FF0000",
+            "default_pos": [
+                0.5,
+                0.25
+            ]
+        },
+        {
+            "name": "bottom_right",
+            "color": "#00FF00",
+            "default_pos": [
+                0.75,
+                0.75
+            ]
+        },
+        {
+            "name": "bottom_left",
+            "color": "#0000FF",
+            "default_pos": [
+                0.25,
+                0.75
+            ]
+        }
+    ],
+    "connections": [
+        [
+            0,
+            1
+        ],
+        [
+            1,
+            2
+        ],
+        [
+            2,
+            0
+        ]
+    ]
+}

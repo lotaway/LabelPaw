@@ -82,10 +82,19 @@ class DialogOver(QWidget):
 
         self.w = 300
         self.h = 60
-        self.resize(800, self.h + 20)  # 预留阴影空间
+
+        # 先计算实际文本宽度，确定窗口真实大小
+        titleFont = QFont('Microsoft YaHei', 10, QFont.Bold)
+        textFont = QFont('Microsoft YaHei', 9)
+        titleWidth = QFontMetrics(titleFont).horizontalAdvance(self.title)
+        textWidth = QFontMetrics(textFont).horizontalAdvance(self.text)
+        self.w = max(250, 60 + max(titleWidth, textWidth) + 30)
+
+        # 窗口大小匹配内容 + 阴影边距，避免 UpdateLayeredWindowIndirect 警告
+        self.resize(self.w + 20, self.h + 20)
         self._dieTime = _dieTime
 
-        # 优化 2：添加前端级别的高级阴影效果
+        # 添加前端级别的高级阴影效果
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setOffset(0, 4)
         shadow.setBlurRadius(15)

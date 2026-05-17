@@ -1,8 +1,21 @@
+import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                               QToolBar, QDockWidget, QListWidget, QGraphicsView,
-                               QLabel, QLineEdit, QPushButton, QStatusBar, QMenu)
-from PySide6.QtCore import Qt, Signal, QRect
-from PySide6.QtGui import QAction, QActionGroup, QPainter, QColor, QFont
+                               QToolBar, QListWidget, QGraphicsView,
+                               QLabel, QLineEdit, QPushButton, QStatusBar, QMenu, QComboBox, QSizePolicy, QAbstractItemView)
+from PySide6.QtCore import Qt, Signal, QRect, QSize
+from PySide6.QtGui import QAction, QActionGroup, QPainter, QColor, QFont, QIcon, QPixmap
+
+def create_text_icon(text, color="#94A3B8"):
+    pixmap = QPixmap(24, 24)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(QColor(color))
+    font = QFont("Segoe UI Emoji", 14)
+    painter.setFont(font)
+    painter.drawText(QRect(0, 0, 24, 24), Qt.AlignCenter, text)
+    painter.end()
+    return QIcon(pixmap)
 
 
 class FormatSelectorWidget(QWidget):
@@ -11,57 +24,23 @@ class FormatSelectorWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 10)
-        layout.setSpacing(2)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(4, 5, 5, 5)
+        layout.setSpacing(0)
+        layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        self.btn = QPushButton("JSON 格式 ▾")
+        self.btn = QPushButton()
+        self.btn.setIcon(QIcon("ui/icon/格式.svg"))
+        self.btn.setIconSize(QSize(20, 20))  # 放大图标
+        self.btn.setText("　JSON 格式 ▾")
         self.btn.setCursor(Qt.PointingHandCursor)
-
-        self.btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                border: 1px solid transparent;
-                color: #F8FAFC;
-                font-size: 14px;
-                font-weight: bold;
-                padding: 6px 10px;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #1E293B;
-                color: #22C55E;
-            }
-            QPushButton::menu-indicator {
-                image: none; /* 强制隐藏默认箭头 */
-            }
-        """)
+        self.btn.setToolTip("选择标注格式")
+        self.btn.setObjectName("formatBtn")
 
         # 下拉菜单
         self.menu = QMenu(self)
         self.menu.setWindowFlag(Qt.FramelessWindowHint)
         self.menu.setAttribute(Qt.WA_TranslucentBackground)
-        self.menu.setStyleSheet("""
-            QMenu {
-                background-color: #0F172A;
-                border: 1px solid #334155;
-                border-radius: 8px;
-                padding: 6px 0px;
-            }
-            QMenu::item {
-                padding: 8px 36px 8px 32px;
-                margin: 2px 6px;
-                border-radius: 4px;
-                color: #cbd5e1;
-                font-size: 13px;
-                font-family: "Microsoft YaHei", sans-serif;
-            }
-            QMenu::item:selected {
-                background-color: #1E293B;
-                color: #22C55E;
-                font-weight: bold;
-            }
-        """)
+        self.menu.setObjectName("formatMenu")
 
         self.act_json = QAction("JSON 格式", self)
         self.act_yolo = QAction("YOLO 格式", self)
@@ -73,28 +52,154 @@ class FormatSelectorWidget(QWidget):
 
         self.btn.setMenu(self.menu)
 
-        self.label = QLabel("标注格式")
-        self.label.setAlignment(Qt.AlignCenter)
-        self.label.setStyleSheet("font-size: 11px; color: #94A3B8; margin-top: 2px;")
-
         layout.addWidget(self.btn)
-        layout.addWidget(self.label)
 
-        self.act_json.triggered.connect(lambda: self._on_format_selected("json", "JSON 格式 ▾"))
-        self.act_yolo.triggered.connect(lambda: self._on_format_selected("yolo", "YOLO 格式 ▾"))
-        self.act_xml.triggered.connect(lambda: self._on_format_selected("xml", "XML 格式 ▾"))
+        self.act_json.triggered.connect(lambda: self._on_format_selected("json", "　JSON 格式 ▾"))
+        self.act_yolo.triggered.connect(lambda: self._on_format_selected("yolo", "　YOLO 格式 ▾"))
+        self.act_xml.triggered.connect(lambda: self._on_format_selected("xml", "　XML 格式 ▾"))
 
     def _on_format_selected(self, fmt, text):
         self.btn.setText(text)
         self.format_changed.emit(fmt)
 
+    def set_yolo_enabled(self, enabled):
+        self.act_yolo.setEnabled(enabled)
+        if not enabled and self.btn.text().strip() == "YOLO 格式 ▾":
+            self._on_format_selected("json", "　JSON 格式 ▾")
+
     def set_format(self, fmt):
         if fmt == "json":
-            self.btn.setText("JSON 格式 ▾")
+            self.btn.setText("　JSON 格式 ▾")
         elif fmt == "yolo":
-            self.btn.setText("YOLO 格式 ▾")
+            self.btn.setText("　YOLO 格式 ▾")
         elif fmt == "xml":
-            self.btn.setText("XML 格式 ▾")
+            self.btn.setText("　XML 格式 ▾")
+            
+    def set_icon_only(self, icon_only):
+        if icon_only:
+            # 记住当前文字以便恢复
+            self._cached_text = self.btn.text()
+            self.btn.setText("")
+            self.btn.setFixedSize(34, 34)
+            self.btn.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    border: 1px solid transparent;
+                    color: #F8FAFC;
+                    font-size: 13px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #1E293B;
+                    color: #22C55E;
+                }
+                QPushButton::menu-indicator {
+                    image: none; /* 强制隐藏默认箭头 */
+                }
+            """)
+        else:
+            if hasattr(self, '_cached_text'):
+                self.btn.setText(self._cached_text)
+            self.btn.setMaximumWidth(16777215)  # 释放宽度限制
+            self.btn.setFixedHeight(34)
+            self.btn.setStyleSheet("")
+
+
+class TemplateSelectorWidget(QWidget):
+    template_changed = Signal(str)
+
+    edit_template = Signal(str)
+    delete_template = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.setAlignment(Qt.AlignCenter)
+
+        self.btn = QPushButton("Person (COCO) ▾")
+        self.btn.setCursor(Qt.PointingHandCursor)
+        self.btn.setObjectName("templateBtn")
+
+        # 下拉菜单
+        self.menu = QMenu(self)
+        self.menu.setWindowFlag(Qt.FramelessWindowHint)
+        self.menu.setAttribute(Qt.WA_TranslucentBackground)
+        self.menu.setObjectName("templateMenu")
+        self.btn.setMenu(self.menu)
+
+        layout.addWidget(self.btn)
+
+    def update_templates(self, templates, main_window=None):
+        self.menu.clear()
+        
+        fixed_templates = ["Person (COCO)", "Hand", "Face (68 pts)", "Rectangle", "Triangle"]
+
+        for t_name in templates:
+            if t_name in fixed_templates:
+                act = QAction(t_name, self)
+                act.triggered.connect(lambda checked=False, name=t_name: self._on_template_selected(name, f"{name} ▾"))
+                self.menu.addAction(act)
+            else:
+                from PySide6.QtWidgets import QWidgetAction, QWidget, QHBoxLayout, QPushButton, QToolButton
+                from PySide6.QtGui import QIcon, QColor
+                from PySide6.QtCore import Qt
+
+                action = QWidgetAction(self)
+                widget = QWidget()
+                widget.setStyleSheet("QWidget { background: transparent; }")
+                layout = QHBoxLayout(widget)
+                layout.setContentsMargins(10, 4, 10, 4)
+                layout.setSpacing(5)
+
+                btn_select = QPushButton(t_name)
+                btn_select.setStyleSheet("text-align: left; background: transparent; border: none; padding: 2px;")
+                btn_select.setCursor(Qt.PointingHandCursor)
+                btn_select.clicked.connect(lambda checked=False, name=t_name: self._on_template_selected(name, f"{name} ▾"))
+                btn_select.clicked.connect(self.menu.close)
+
+                btn_edit = QToolButton()
+                btn_delete = QToolButton()
+                
+                if main_window:
+                    try:
+                        btn_edit.setIcon(main_window.set_icon_color(QIcon("ui/icon/编辑.svg"), main_window.current_icon_color))
+                        btn_delete.setIcon(main_window.set_icon_color(QIcon("ui/icon/trash.svg"), QColor("#EF4444")))
+                    except:
+                        pass
+
+                btn_edit.setStyleSheet("QToolButton { background: transparent; border: none; } QToolButton:hover { background-color: rgba(128,128,128,0.2); border-radius: 4px; }")
+                btn_delete.setStyleSheet("QToolButton { background: transparent; border: none; } QToolButton:hover { background-color: rgba(128,128,128,0.2); border-radius: 4px; }")
+                btn_edit.setCursor(Qt.PointingHandCursor)
+                btn_delete.setCursor(Qt.PointingHandCursor)
+
+                btn_edit.clicked.connect(lambda checked=False, name=t_name: self.edit_template.emit(name))
+                btn_edit.clicked.connect(self.menu.close)
+
+                btn_delete.clicked.connect(lambda checked=False, name=t_name: self.delete_template.emit(name))
+                btn_delete.clicked.connect(self.menu.close)
+
+                layout.addWidget(btn_select, 1)
+                layout.addWidget(btn_edit)
+                layout.addWidget(btn_delete)
+                action.setDefaultWidget(widget)
+                self.menu.addAction(action)
+            
+        self.menu.addSeparator()
+        
+        act_new = QAction("+ New Template...", self)
+        act_new.triggered.connect(lambda: self._on_template_selected("+ New Template...", self.btn.text()))
+        self.menu.addAction(act_new)
+
+    def _on_template_selected(self, template_name, btn_text):
+        if template_name != "+ New Template...":
+            self.btn.setText(btn_text)
+        self.template_changed.emit(template_name)
+        
+    def set_current_template_text(self, text):
+        self.btn.setText(f"{text} ▾")
 
 
 class SwitchControl(QWidget):
@@ -105,6 +210,7 @@ class SwitchControl(QWidget):
         self.setFixedSize(50, 26)
         self.setCursor(Qt.PointingHandCursor)
         self._checked = False
+        self._vertical = False  # 竖向模式
 
     def isChecked(self):
         return self._checked
@@ -131,13 +237,23 @@ class SwitchControl(QWidget):
             p.setBrush(QColor("#334155"))
 
         p.setPen(Qt.NoPen)
-        p.drawRoundedRect(rect, 13, 13)
+        radius = min(self.width(), self.height()) // 2
+        p.drawRoundedRect(rect, radius, radius)
 
         p.setBrush(QColor("#FFFFFF"))
-        if self._checked:
-            p.drawEllipse(self.width() - 24, 2, 22, 22)
+        if self._vertical:
+            # 竖向模式：圆球上下滑动
+            circle_size = self.width() - 4
+            if self._checked:
+                p.drawEllipse(2, self.height() - circle_size - 2, circle_size, circle_size)
+            else:
+                p.drawEllipse(2, 2, circle_size, circle_size)
         else:
-            p.drawEllipse(2, 2, 22, 22)
+            # 横向模式：圆球左右滑动
+            if self._checked:
+                p.drawEllipse(self.width() - 24, 2, 22, 22)
+            else:
+                p.drawEllipse(2, 2, 22, 22)
 
 
 class CanvasView(QGraphicsView):
@@ -151,18 +267,32 @@ class CanvasView(QGraphicsView):
         self.setMouseTracking(True)
         self.setAlignment(Qt.AlignCenter)
         self.setDragMode(QGraphicsView.NoDrag)
+        self.viewport().setCursor(Qt.CrossCursor)
 
         self._is_panning = False
         self._pan_start_pos = None
 
     def wheelEvent(self, event):
-        zoom_in_factor = 1.15
-        zoom_out_factor = 1.0 / zoom_in_factor
-        if event.angleDelta().y() > 0:
-            zoom_factor = zoom_in_factor
+        if event.modifiers() & Qt.ControlModifier:
+            # Ctrl + 滚轮：缩放
+            zoom_in_factor = 1.15
+            zoom_out_factor = 1.0 / zoom_in_factor
+            if event.angleDelta().y() > 0:
+                self.scale(zoom_in_factor, zoom_in_factor)
+            else:
+                self.scale(zoom_out_factor, zoom_out_factor)
         else:
-            zoom_factor = zoom_out_factor
-        self.scale(zoom_factor, zoom_factor)
+            # 普通滚轮：滚动画布（仅放大后才生效，未放大时滚动条范围为 0 自动无效）
+            # 垂直滚动
+            if event.angleDelta().y() != 0:
+                self.verticalScrollBar().setValue(
+                    self.verticalScrollBar().value() - event.angleDelta().y()
+                )
+            # 水平滚动（支持鼠标左右滚轮）
+            if event.angleDelta().x() != 0:
+                self.horizontalScrollBar().setValue(
+                    self.horizontalScrollBar().value() - event.angleDelta().x()
+                )
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MiddleButton:
@@ -186,16 +316,73 @@ class CanvasView(QGraphicsView):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MiddleButton:
             self._is_panning = False
-            self.setCursor(Qt.ArrowCursor)
+            self.viewport().setCursor(Qt.CrossCursor)
             event.accept()
             return
         super().mouseReleaseEvent(event)
 
 
 class Ui_MainWindow(object):
+    def set_icon_color(self, icon, color):
+        from PySide6.QtGui import QPainter, QIcon, QPixmap, QColor
+        pixmap = icon.pixmap(100, 100)
+        painter = QPainter(pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(pixmap.rect(), color)
+        painter.end()
+        
+        # 核心逻辑：自己创建一个可以响应 enable/disable 的 QIcon
+        # 我们把这个纯色图作为 Normal 状态
+        new_icon = QIcon()
+        new_icon.addPixmap(pixmap, QIcon.Normal, QIcon.On)
+        new_icon.addPixmap(pixmap, QIcon.Normal, QIcon.Off)
+        
+        # 为了让禁用状态变灰，我们用 QPainter 绘制一个半透明的版本作为 Disabled 状态
+        disabled_pixmap = icon.pixmap(100, 100)
+        dpainter = QPainter(disabled_pixmap)
+        dpainter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        
+        # 深色主题下禁用颜色为半透明白，浅色主题下为半透明黑
+        if color.lightness() > 128:
+            disabled_color = QColor(255, 255, 255, 60)
+        else:
+            disabled_color = QColor(15, 23, 42, 60)
+            
+        dpainter.fillRect(disabled_pixmap.rect(), disabled_color)
+        dpainter.end()
+        
+        new_icon.addPixmap(disabled_pixmap, QIcon.Disabled, QIcon.On)
+        new_icon.addPixmap(disabled_pixmap, QIcon.Disabled, QIcon.Off)
+        
+        return new_icon
+
     def setupUi(self, MainWindow):
-        MainWindow.setWindowTitle("LuoHuaLabel - 基于SAM3的智能标注系统")
+        MainWindow.setWindowTitle("LabelPaw - 基于SAM3的智能标注系统")
         MainWindow.resize(1280, 800)
+
+        # ================= Top Nav buttons (will be placed in central layout) =================
+        font_icon = QFont("Segoe UI", 16, QFont.Bold)
+
+        # Collapse Button
+        self.btnCollapse = QPushButton("≡")
+        self.btnCollapse.setFont(font_icon)
+        self.btnCollapse.setToolTip("折叠/展开侧边栏")
+        self.btnCollapse.setFixedSize(36, 36)
+        self.btnCollapse.setObjectName("btnTopBar")
+
+        # Theme Toggle Button
+        self.btnThemeToggle = QPushButton("☀")
+        self.btnThemeToggle.setFont(font_icon)
+        self.btnThemeToggle.setToolTip("切换亮/暗色模式")
+        self.btnThemeToggle.setFixedSize(36, 36)
+        self.btnThemeToggle.setObjectName("btnTopBar")
+
+        # Author Info Button
+        self.btnAuthorInfo = QPushButton("ⓘ")
+        self.btnAuthorInfo.setFont(font_icon)
+        self.btnAuthorInfo.setToolTip("作者信息")
+        self.btnAuthorInfo.setFixedSize(36, 36)
+        self.btnAuthorInfo.setObjectName("btnTopBar")
 
         self.btnDatasetTool = QPushButton("数据集处理")
         self.btnDatasetTool.setStyleSheet("""
@@ -211,11 +398,202 @@ class Ui_MainWindow(object):
         """)
 
         self.centralWidget = QWidget(MainWindow)
-        self.mainLayout = QHBoxLayout(self.centralWidget)
+        self.mainLayout = QVBoxLayout(self.centralWidget)
         self.mainLayout.setContentsMargins(0, 0, 0, 0)
+        self.mainLayout.setSpacing(0)
+
+        # ================= Custom Top Bar (full width, above everything) =================
+        self.topBar = QWidget()
+        self.topBar.setObjectName("topBar")
+        self.topBar.setFixedHeight(50)
+        topBarLayout = QHBoxLayout(self.topBar)
+        topBarLayout.setContentsMargins(10, 0, 10, 0)
+        topBarLayout.setSpacing(8)
+        topBarLayout.addWidget(self.btnCollapse)
+        topBarLayout.addStretch()
+        topBarLayout.addWidget(self.btnAuthorInfo)
+        topBarLayout.addWidget(self.btnThemeToggle)
+        self.mainLayout.addWidget(self.topBar)
+        
+        # ================= Content Area (Splitter: Canvas + Right Panel) =================
+        from PySide6.QtWidgets import QSplitter
+        self.contentSplitter = QSplitter(Qt.Horizontal)
+        self.contentSplitter.setObjectName("contentSplitter")
+        self.contentSplitter.setStyleSheet("QSplitter::handle { background: transparent; width: 1px; }")
+        
+        # --- Left: Canvas Area ---
+        self.canvasArea = QWidget()
+        self.canvasArea.setObjectName("canvasArea")
+        canvasLayout = QVBoxLayout(self.canvasArea)
+        canvasLayout.setContentsMargins(0, 5, 0, 0)
+        canvasLayout.setSpacing(5)
+        
+        # ================= Annotation Toolbar =================
+        self.annotationToolbar = QWidget()
+        self.annotationToolbar.setObjectName("annotationToolbar")
+        self.annotationToolbar.setFixedHeight(40)
+        # 居中显示
+        tb_layout_wrap = QHBoxLayout()
+        tb_layout_wrap.setContentsMargins(0, 0, 0, 0)
+        tb_layout_wrap.addStretch()
+        
+        tb_layout = QHBoxLayout(self.annotationToolbar)
+        tb_layout.setContentsMargins(10, 0, 10, 0)
+        tb_layout.setSpacing(10)
+        
+        self.btnDrawMode = QPushButton("✍ 手动标注")
+        self.btnDrawMode.setCheckable(True)
+        self.btnDrawMode.setAutoExclusive(True)
+        self.btnDrawMode.setChecked(True)
+
+        self.btnSmartMode = QPushButton("✨ 智能")
+        self.btnSmartMode.setCheckable(True)
+        self.btnSmartMode.setAutoExclusive(True)        
+        # 模型选择器按钮（Smart 模式时显示）
+        self.btnModelSelector = QPushButton(" SAM 3 ▾")
+        self.btnModelSelector.setObjectName("btnModelSelector")
+        self.btnModelSelector.setCursor(Qt.PointingHandCursor)
+        self.btnModelSelector.setToolTip("切换 SAM 模型")
+        self.btnModelSelector.hide()  # 默认隐藏，Smart 激活时显示
+
+        self.btnPredict = QPushButton(" 预测")
+        self.btnPredict.setObjectName("btnPredict")
+        self.btnPredict.setCursor(Qt.PointingHandCursor)
+        self.btnPredict.setToolTip("使用模型进行预测 (快捷键: M)")
+        self.btnPredict.hide()  # 仅在非SAM模型下显示
+        
+        # Segmented toggle effect
+        self.btnDrawMode.toggled.connect(lambda checked: self.btnSmartMode.setChecked(not checked) if checked else None)
+        self.btnSmartMode.toggled.connect(lambda checked: self.btnDrawMode.setChecked(not checked) if checked else None)
+        
+        self.templateWidget = TemplateSelectorWidget()
+        self.templateWidget.hide() # Only show when Keypoint mode is active
+        
+        from PySide6.QtWidgets import QToolButton
+        
+        # 默认明亮主题的颜色 (深灰色)
+        self.current_icon_color = QColor(15, 23, 42)
+        
+        self.btnUndo = QToolButton()
+        self.btnUndo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-left.svg"), self.current_icon_color))
+        self.btnUndo.setToolTip("撤销 (Ctrl+Z)")
+        self.btnUndo.setFixedSize(36, 36)
+        
+        self.btnRedo = QToolButton()
+        self.btnRedo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-right.svg"), self.current_icon_color))
+        self.btnRedo.setToolTip("重做 (Ctrl+Y)")
+        self.btnRedo.setFixedSize(36, 36)
+        
+        self.btnDelete = QToolButton()
+        self.btnDelete.setIcon(self.set_icon_color(QIcon("ui/icon/trash.svg"), self.current_icon_color))
+        self.btnDelete.setToolTip("删除 (Del)")
+        self.btnDelete.setFixedSize(36, 36)
+        
+        self.btnSave = QToolButton()
+        self.btnSave.setIcon(self.set_icon_color(QIcon("ui/icon/floppy-disk.svg"), self.current_icon_color))
+        self.btnSave.setToolTip("保存 (Ctrl+S)")
+        self.btnSave.setFixedSize(36, 36)
+        
+        self.btnKeyboard = QToolButton()
+        self.btnKeyboard.setIcon(self.set_icon_color(QIcon("ui/icon/keyboard.svg"), self.current_icon_color))
+        self.btnKeyboard.setToolTip("快捷键大全 (F1)")
+        self.btnKeyboard.setFixedSize(36, 36)
+        
+        for btn in [self.btnUndo, self.btnRedo, self.btnDelete, self.btnSave, self.btnKeyboard]:
+            btn.setStyleSheet("QToolButton { border: none; background: transparent; border-radius: 6px; } QToolButton:hover { background-color: rgba(128, 128, 128, 0.2); }")
+
+        sep1 = QLabel("|")
+        sep1.setStyleSheet("color: #475569; font-weight: bold;")
+        sep2 = QLabel("|")
+        sep2.setStyleSheet("color: #475569; font-weight: bold;")
+        sep3 = QLabel("|")
+        sep3.setStyleSheet("color: #475569; font-weight: bold;")
+        
+        tb_layout.addWidget(self.btnDrawMode)
+        tb_layout.addWidget(self.btnSmartMode)
+        tb_layout.addWidget(self.btnModelSelector)
+        tb_layout.addWidget(self.btnPredict)
+        tb_layout.addWidget(sep1)
+        tb_layout.addWidget(self.templateWidget)
+        self.sepTemplate = QLabel("|")
+        self.sepTemplate.setStyleSheet("color: #475569; font-weight: bold;")
+        self.sepTemplate.hide()
+        tb_layout.addWidget(self.sepTemplate)
+        tb_layout.addWidget(self.btnUndo)
+        tb_layout.addWidget(self.btnRedo)
+        tb_layout.addWidget(self.btnDelete)
+        tb_layout.addWidget(self.btnSave)
+        tb_layout.addWidget(sep3)
+        tb_layout.addWidget(self.btnKeyboard)
+        
+        tb_layout_wrap.addWidget(self.annotationToolbar)
+        tb_layout_wrap.addStretch()
+        canvasLayout.addLayout(tb_layout_wrap)
+        # =======================================================
 
         self.view = CanvasView()
-        self.mainLayout.addWidget(self.view)
+        canvasLayout.addWidget(self.view)
+        
+        self.contentSplitter.addWidget(self.canvasArea)
+        
+        # --- Right: Annotation Panel ---
+        self.rightPanel = QWidget()
+        self.rightPanel.setObjectName("rightPanel")
+        self.rightPanel.setMinimumWidth(180)
+        self.rightPanel.setMaximumWidth(300)
+        self.dockLayout = QVBoxLayout(self.rightPanel)
+        self.dockLayout.setContentsMargins(8, 8, 8, 8)
+
+        # 标注管理标题栏
+        rightTitleBar = QHBoxLayout()
+        self.rightPanelTitle = QLabel("标注管理")
+        self.rightPanelTitle.setObjectName("rightPanelTitle")
+        titleFont = QFont("Microsoft YaHei", 10, QFont.Bold)
+        self.rightPanelTitle.setFont(titleFont)
+        rightTitleBar.addWidget(self.rightPanelTitle)
+        rightTitleBar.addStretch()
+        self.dockLayout.addLayout(rightTitleBar)
+
+        self.labelClasses = QLabel("历史类别:")
+        self.listClasses = QListWidget()
+
+        self.labelFiles = QLabel("文件列表:")
+        self.listFiles = QListWidget()
+        self.listFiles.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.listFiles.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        self.dockLayout.addWidget(self.labelClasses)
+        self.dockLayout.addWidget(self.listClasses, 2)  # 历史类别分配x份自适应空间
+        self.dockLayout.addWidget(self.labelFiles)
+        self.dockLayout.addWidget(self.listFiles, 4)  # 文件列表分配x份自适应空间
+
+        # ==== 右下角区域 ====
+        self.samTextGroup = QWidget()
+        textLayout = QVBoxLayout(self.samTextGroup)
+        textLayout.setContentsMargins(0, 5, 0, 15)
+        textLayout.setSpacing(8)
+
+        # 提示词输入与提取按钮
+        self.samPromptInput = QLineEdit()
+        self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog)")
+        self.samPromptInput.setObjectName("samPromptInput")
+
+        self.samPromptBtn = QPushButton("✨ 提交")
+        self.samPromptBtn.setCursor(Qt.PointingHandCursor)
+        self.samPromptBtn.setObjectName("samPromptBtn")
+
+        textLayout.addWidget(self.samPromptInput)
+        textLayout.addWidget(self.samPromptBtn)
+
+        self.dockLayout.addWidget(self.samTextGroup)
+
+        self.contentSplitter.addWidget(self.rightPanel)
+        
+        # 设置 splitter 初始比例 (canvas 占大部分)
+        self.contentSplitter.setStretchFactor(0, 1)
+        self.contentSplitter.setStretchFactor(1, 0)
+        
+        self.mainLayout.addWidget(self.contentSplitter)
         MainWindow.setCentralWidget(self.centralWidget)
 
         self.statusBar = QStatusBar()
@@ -226,123 +604,18 @@ class Ui_MainWindow(object):
         self.toolBar = QToolBar("工具栏")
         self.toolBar.setOrientation(Qt.Vertical)
         self.toolBar.setMovable(False)
+        self.toolBar.setFixedWidth(190)  # 固定宽度
+        self.toolBar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toolBar.setIconSize(QSize(24, 24))  # 统一图标尺寸
         MainWindow.addToolBar(Qt.LeftToolBarArea, self.toolBar)
 
-        self.dockRight = QDockWidget("标注管理", MainWindow)
-        self.dockRight.setAllowedAreas(Qt.RightDockWidgetArea)
-        self.dockRightWidget = QWidget()
-        self.dockLayout = QVBoxLayout(self.dockRightWidget)
-
-        self.labelClasses = QLabel("历史类别:")
-        self.listClasses = QListWidget()
-
-        self.labelFiles = QLabel("文件列表:")
-        self.listFiles = QListWidget()
-        # self.listFiles.setMinimumHeight(350)
-
-        # self.dockLayout.addWidget(self.labelClasses)
-        # self.dockLayout.addWidget(self.listClasses)
-        # self.dockLayout.addWidget(self.labelFiles)
-        # self.dockLayout.addWidget(self.listFiles)
-
-        self.dockLayout.addWidget(self.labelClasses)
-        self.dockLayout.addWidget(self.listClasses, 2)  # 历史类别分配x份自适应空间
-        self.dockLayout.addWidget(self.labelFiles)
-        self.dockLayout.addWidget(self.listFiles, 4)  # 文件列表分配x份自适应空间
-
-        # self.dockLayout.addStretch()
-
-        # ==== 右下角区域 ====
-        self.samTextGroup = QWidget()
-        textLayout = QVBoxLayout(self.samTextGroup)
-        textLayout.setContentsMargins(0, 5, 0, 15)
-        textLayout.setSpacing(8)
-
-        helpLayout = QHBoxLayout()
-        helpLayout.setContentsMargins(0, 0, 0, 8)
-        helpLayout.addStretch()  # 把问号推到右边
-
-        self.btnHelp = QPushButton("?")
-        self.btnHelp.setToolTip("使用说明 (F1)")
-        self.btnHelp.setFixedSize(22, 22)  # 尺寸
-        self.btnHelp.setCursor(Qt.PointingHandCursor)
-
-        font = QFont()
-        font.setBold(True)
-        font.setPointSize(10)  # 字体调小
-        self.btnHelp.setFont(font)
-
-        self.btnHelp.setStyleSheet("""
-                    QPushButton {
-                        background-color: transparent;
-                        border: 2px solid #334155;
-                        border-radius: 11px;
-                        color: #94A3B8;
-                        padding: 0px;
-                        margin: 0px;
-                    }
-                    QPushButton:hover {
-                        border: 2px solid #22C55E;
-                        color: #22C55E;
-                        background-color: #1E293B;
-                    }
-                    QPushButton:pressed {
-                        background-color: #0F172A;
-                    }
-                """)
-        helpLayout.addWidget(self.btnHelp)
-        textLayout.addLayout(helpLayout)
-
-        # 提示词输入与提取按钮
-        self.samPromptInput = QLineEdit()
-        self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog)")
-        self.samPromptInput.setStyleSheet("""
-                    QLineEdit {
-                        border: 2px solid #334155;
-                        border-radius: 14px;
-                        padding: 6px 14px;
-                        font-size: 13px;
-                        background-color: #0F172A;
-                        color: #F8FAFC;
-                    }
-                    QLineEdit:focus {
-                        border: 2px solid #22C55E;
-                    }
-                """)
-
-        self.samPromptBtn = QPushButton("✨ 提交")
-        self.samPromptBtn.setCursor(Qt.PointingHandCursor)
-        self.samPromptBtn.setStyleSheet("""
-                    QPushButton {
-                        background-color: #22C55E;
-                        color: #020617;
-                        border: none;
-                        border-radius: 14px;
-                        padding: 8px;
-                        font-weight: bold;
-                        font-size: 13px;
-                    }
-                    QPushButton:hover {
-                        background-color: #4ade80;
-                    }
-                    QPushButton:pressed {
-                        background-color: #16a34a;
-                    }
-                """)
-
-        textLayout.addWidget(self.samPromptInput)
-        textLayout.addWidget(self.samPromptBtn)
-
-        self.dockLayout.addWidget(self.samTextGroup)
-
-        self.dockRight.setWidget(self.dockRightWidget)
-        MainWindow.addDockWidget(Qt.RightDockWidgetArea, self.dockRight)
-
-        self.actionOpen = QAction("打开目录", MainWindow)
-        self.actionRect = QAction("矩形标注 (R)", MainWindow)
-        self.actionPoly = QAction("多边形标注 (P)", MainWindow)
-        self.actionPoint = QAction("点标注 (T)", MainWindow)
-        self.actionRBox = QAction("旋转框标注 (O)", MainWindow)
+        # 初始图标颜色 (浅色主题用深色图标)
+        _ic = QColor(15, 23, 42)
+        self.actionOpen = QAction(self.set_icon_color(QIcon("ui/icon/folder.svg"), _ic), "打开目录", MainWindow)
+        self.actionRect = QAction(self.set_icon_color(QIcon("ui/icon/rectangle.svg"), _ic), "矩形标注 (R)", MainWindow)
+        self.actionPoly = QAction(self.set_icon_color(QIcon("ui/icon/polygon.svg"), _ic), "多边形标注 (P)", MainWindow)
+        self.actionPoint = QAction(self.set_icon_color(QIcon("ui/icon/关键点.svg"), _ic), "关键点标注 (T)", MainWindow)
+        self.actionRBox = QAction(self.set_icon_color(QIcon("ui/icon/手机旋转1.svg"), _ic), "旋转框标注 (O)", MainWindow)
 
         self.modeGroup = QActionGroup(MainWindow)
         for act in [self.actionRect, self.actionPoly, self.actionPoint, self.actionRBox]:
@@ -351,10 +624,41 @@ class Ui_MainWindow(object):
 
         self.actionRect.setChecked(True)
 
+        # Brand Logo (顶部，在左侧工具栏内)
+        self.logoWidget = QWidget()
+        self.logoWidget.setObjectName("logoWidget")
+        logoLayout = QHBoxLayout(self.logoWidget)
+        logoLayout.setContentsMargins(8, 8, 4, 8)
+        logoLayout.setSpacing(5)
+
+        self.logoIcon = QLabel()
+        self.logoIcon.setObjectName("logoIcon")
+        self.logoIcon.setFixedSize(28, 28)
+        self.logoIcon.setAlignment(Qt.AlignCenter)
+        
+        self.logoLabel = QLabel("LabelPaw")
+        self.logoLabel.setObjectName("logoLabel")
+        self.logoLabel.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
+        
+        # 尝试初始化加载 Logo 图标
+        logo_path = "ui/icon/logo.png"
+        if os.path.exists(logo_path):
+            pix = QPixmap(logo_path)
+            if not pix.isNull():
+                self.logoIcon.setPixmap(pix.scaled(28, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        
+        logoLayout.addWidget(self.logoIcon)
+        logoLayout.addWidget(self.logoLabel)
+        logoLayout.addStretch()
+        self.logoWidget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.toolBar.addWidget(self.logoWidget)
+
         self.toolBar.addAction(self.actionOpen)
         self.toolBar.addSeparator()
 
         self.formatWidget = FormatSelectorWidget()
+        self.formatWidget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.formatWidget.btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.toolBar.addWidget(self.formatWidget)
         self.toolBar.addSeparator()
 
@@ -363,49 +667,53 @@ class Ui_MainWindow(object):
         self.toolBar.addAction(self.actionPoint)
         self.toolBar.addAction(self.actionRBox)
 
+        # 统一所有 QToolButton 宽度（类似前端 width:100%），使图标垂直对齐
+        self._actionButtons = []
+        for action in [self.actionOpen, self.actionRect, self.actionPoly, self.actionPoint, self.actionRBox]:
+            btn = self.toolBar.widgetForAction(action)
+            if btn:
+                btn.setMinimumWidth(180)  # 强制撑满工具栏宽度
+                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                self._actionButtons.append(btn)
+
         self.toolBar.addSeparator()
+
+        # SAM 组件（图标 + 开关）
         self.samWidget = QWidget()
         self.samWidget.setStyleSheet("background-color: transparent;")
-        samLayout = QVBoxLayout(self.samWidget)
-        samLayout.setContentsMargins(5, 10, 5, 10)
-        samLayout.setAlignment(Qt.AlignCenter)
+        samOuterLayout = QHBoxLayout(self.samWidget)
+        samOuterLayout.setContentsMargins(8, 5, 4, 5)
+        samOuterLayout.setSpacing(10)
+        samOuterLayout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
+        # SAM 图标 (左侧)
+        self.samIcon = QLabel()
+        self.samIcon.setFixedSize(24, 24)
+        self.samIcon.setAlignment(Qt.AlignCenter)
+        self.samIcon.setPixmap(
+            self.set_icon_color(QIcon("ui/icon/魔法-copy.svg"), _ic).pixmap(24, 24)
+        )
+        self.samIcon.setToolTip("SAM 智能辅助")
+
+        # SAM 开关 (右侧)
         self.samSwitch = SwitchControl()
-        self.samLabel = QLabel("SAM 智能辅助")
-        self.samLabel.setAlignment(Qt.AlignCenter)
-        self.samLabel.setStyleSheet("font-size: 11px; color: #94A3B8; margin-top: 5px;")
+        self.samSwitch.setToolTip("开启/关闭 SAM 智能辅助")
 
-        samLayout.addWidget(self.samSwitch, alignment=Qt.AlignCenter)
-        samLayout.addWidget(self.samLabel, alignment=Qt.AlignCenter)
+        samOuterLayout.addWidget(self.samIcon)
+        samOuterLayout.addWidget(self.samSwitch)
+        
+        self.samWidget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.toolBar.addWidget(self.samWidget)
 
         # ==========================================
         # 数据集处理按钮
         # ==========================================
-        self.toolBar.addSeparator()  # 添加一条水平分割线
+        self.toolBar.addSeparator()
 
-        self.btnDatasetTool = QPushButton("数据集处理")
+        self.btnDatasetTool = QPushButton(self.set_icon_color(QIcon("ui/icon/wrench.svg"), _ic), " 数据集处理")
         self.btnDatasetTool.setCursor(Qt.PointingHandCursor)
-        self.btnDatasetTool.setStyleSheet("""
-                    QPushButton {
-                        background-color: #0F172A;
-                        color: #94A3B8;
-                        border: 1px solid #334155;
-                        border-radius: 6px;
-                        padding: 10px 5px;
-                        margin: 10px 8px;
-                        font-weight: bold;
-                        font-size: 13px;
-                        font-family: "Microsoft YaHei";
-                    }
-                    QPushButton:hover {
-                        background-color: #1E293B;
-                        color: #22C55E;
-                        border-color: #22C55E;
-                    }
-                    QPushButton:pressed {
-                        background-color: #16a34a;
-                        color: #020617;
-                    }
-                """)
+        self.btnDatasetTool.setObjectName("btnDatasetTool")
+        self.btnDatasetTool.setToolTip("数据集处理")
+        self.btnDatasetTool.setIconSize(QSize(24, 24))
+        self.btnDatasetTool.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.toolBar.addWidget(self.btnDatasetTool)

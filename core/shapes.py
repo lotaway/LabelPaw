@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsEllipseItem, \
-    QGraphicsTextItem, QGraphicsLineItem, QGraphicsObject
-from PySide6.QtGui import QPen, QBrush, QColor, QPolygonF, QFont, QTransform, QPainter
+    QGraphicsTextItem, QGraphicsLineItem, QGraphicsObject, QMenu
+from PySide6.QtGui import QPen, QBrush, QColor, QPolygonF, QFont, QTransform, QPainter, QAction, QPainterPath, QPainterPathStroker
 from PySide6.QtCore import Qt, QRectF, QPointF
 import math
 
@@ -22,16 +22,19 @@ def point_to_segment_dist(p, a, b):
     return dist, QPointF(proj_x, proj_y)
 
 
-def clamp_item_position(item, proposed_pos):
+def clamp_item_position(item, proposed_pos, overflow_ratio=0.0):
     scene = item.scene()
     if not scene: return proposed_pos
     rect = scene.sceneRect()
     shape_rect = item.boundingRect()
 
-    min_x = rect.left() - shape_rect.left()
-    max_x = rect.right() - shape_rect.right()
-    min_y = rect.top() - shape_rect.top()
-    max_y = rect.bottom() - shape_rect.bottom()
+    allow_w = shape_rect.width() * overflow_ratio
+    allow_h = shape_rect.height() * overflow_ratio
+
+    min_x = rect.left() - shape_rect.left() - allow_w
+    max_x = rect.right() - shape_rect.right() + allow_w
+    min_y = rect.top() - shape_rect.top() - allow_h
+    max_y = rect.bottom() - shape_rect.bottom() + allow_h
 
     new_x, new_y = proposed_pos.x(), proposed_pos.y()
     if min_x <= max_x:
@@ -243,6 +246,531 @@ class RectShape(QGraphicsRectItem, BaseShape):
             self.update_label_visibility(self, is_selected=self.isSelected(), is_hovered=self._hovered)
         elif change == QGraphicsItem.ItemPositionHasChanged:
             self.update_label_position(self)
+        return super().itemChange(change, value)
+
+
+from core.translations import KEYPOINT_TRANSLATIONS
+
+class KeypointHandle(QGraphicsEllipseItem):
+    def __init__(self, index, kp_info, parent):
+        r = 4
+        super().__init__(-r, -r, r * 2, r * 2, parent)
+        self.index = index
+        self.kp_name = kp_info.get("name", str(index))
+        color_hex = kp_info.get("color", "#00FF00")
+        self.color = QColor(color_hex)
+        
+        self.visible_state = 2  # 2: visible, 1: occluded, 0: hidden
+        
+        self.setBrush(QBrush(self.color))
+        self.setPen(QPen(QColor(255, 255, 255), 1.5))
+        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemSendsGeometryChanges | QGraphicsItem.ItemIsSelectable)
+        self.setAcceptHoverEvents(True)
+        self.setZValue(1002)
+        
+        # Tooltip for hover
+        display_name = KEYPOINT_TRANSLATIONS.get(self.kp_name, self.kp_name)
+        if display_name == self.kp_name and self.kp_name.startswith("pt_"):
+            display_name = self.kp_name.replace("pt_", "点_")
+            
+        self.setToolTip(f"{self.index}: {display_name}")
+        
+    def hoverEnterEvent(self, event):
+        parent = self.parentItem()
+        is_editing = parent and parent.isSelected()
+
+        if not is_editing:
+            self.setCursor(Qt.PointingHandCursor)
+            if parent and hasattr(parent, 'set_hover_state'):
+                parent.set_hover_state(True)
+            super().hoverEnterEvent(event)
+            return
+
+        from PySide6.QtGui import QCursor, QIcon
+        icon_path = "ui/icon/hand-grabbing-duotone.svg"
+        
+        try:
+            pixmap = QIcon(icon_path).pixmap(24, 24)
+            self.setCursor(QCursor(pixmap, 12, 12))
+        except:
+            self.setCursor(Qt.OpenHandCursor)
+            
+        # highlight
+        self.setPen(QPen(QColor(255, 255, 0), 2))
+        super().hoverEnterEvent(event)
+        
+    def hoverLeaveEvent(self, event):
+        self.setSelected(False)
+        parent = self.parentItem()
+        is_editing = parent and parent.isSelected()
+
+        if not is_editing:
+            self.unsetCursor()
+            if parent and hasattr(parent, 'set_hover_state'):
+                parent.set_hover_state(False)
+            super().hoverLeaveEvent(event)
+            return
+
+        self.unsetCursor()
+        self.setPen(QPen(QColor(255, 255, 255), 1.5))
+        super().hoverLeaveEvent(event)
+        
+    def mousePressEvent(self, event):
+        parent = self.parentItem()
+        is_editing = parent and parent.isSelected()
+
+        if not is_editing:
+            event.ignore()
+            return
+
+        if event.button() == Qt.RightButton:
+            # Context menu for visibility
+            menu = QMenu()
+            # 应用暗色/亮色现代样式
+            menu.setStyleSheet("""
+                QMenu {
+                    background-color: #2b2b2b;
+                    color: #e0e0e0;
+                    border: 1px solid #444;
+                    border-radius: 6px;
+                    padding: 4px;
+                    font-family: "Segoe UI", "Microsoft YaHei";
+                    font-size: 13px;
+                }
+                QMenu::item {
+                    padding: 6px 24px 6px 12px;
+                    border-radius: 4px;
+                }
+                QMenu::item:selected {
+                    background-color: #3a3a3a;
+                    color: #ffffff;
+                }
+            """)
+            act_vis = menu.addAction("可见 (Visible) [2]")
+            act_occ = menu.addAction("遮挡 (Occluded) [1]")
+            act_hid = menu.addAction("隐藏 (Hidden) [0]")
+            
+            action = menu.exec(event.screenPos())
+            if action == act_vis:
+                self.set_visibility(2)
+            elif action == act_occ:
+                self.set_visibility(1)
+            elif action == act_hid:
+                self.set_visibility(0)
+            event.accept()
+        elif event.button() == Qt.LeftButton:
+            self.setCursor(Qt.ClosedHandCursor)
+            # 锁定父级位置，确保只移动当前关键点
+            if self.parentItem():
+                self.parentItem().setFlag(QGraphicsItem.ItemIsMovable, False)
+                self.parentItem().setSelected(True)
+            super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            from PySide6.QtGui import QCursor, QIcon
+            parent = self.parentItem()
+            is_editing = parent and parent.isSelected()
+            icon_path = "ui/icon/hand-grabbing-duotone.svg" if is_editing else "ui/icon/hand-grabbing-duotone.svg"
+            try:
+                pixmap = QIcon(icon_path).pixmap(24, 24)
+                self.setCursor(QCursor(pixmap, 12, 12))
+            except:
+                self.setCursor(Qt.OpenHandCursor)
+            # 恢复父级可移动状态
+            self.parentItem().setFlag(QGraphicsItem.ItemIsMovable, True)
+            
+            # 通知主场景更新状态（保存撤销记录）
+            # 必须检查当前对象是否处于非预览状态
+            if not getattr(self.parentItem(), 'is_temp', False) and self.scene() and hasattr(self.scene(), 'state_changed'):
+                self.scene().state_changed.emit()
+                
+        super().mouseReleaseEvent(event)
+            
+    def set_visibility(self, state):
+        self.visible_state = state
+        if state == 2:
+            self.setBrush(QBrush(self.color))
+            self.setOpacity(1.0)
+        elif state == 1:
+            self.setBrush(QBrush(QColor(150, 150, 150)))
+            self.setOpacity(0.8)
+        elif state == 0:
+            self.setBrush(QBrush(Qt.NoBrush))
+            self.setOpacity(0.3)
+        if hasattr(self.parentItem(), 'update_lines'):
+            self.parentItem().update_lines()
+            
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemPositionHasChanged:
+            if hasattr(self.parentItem(), 'update_lines'):
+                self.parentItem().update_lines()
+            if hasattr(self.parentItem(), 'update_bounding_box'):
+                self.parentItem().update_bounding_box()
+        return super().itemChange(change, value)
+
+
+class PoseShape(QGraphicsObject, BaseShape):
+    def __init__(self, rect, template, label="", is_temp=False):
+        super().__init__()
+        self.is_temp = is_temp
+        self.label = label
+        self.template = template
+        
+        self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemSendsGeometryChanges)
+        self.setAcceptHoverEvents(True)
+        
+        self._is_resizing = False
+        self._dragging_handle = None
+        self._hovered = False
+
+        # 依赖宽高
+        self.box_w = rect.width()
+        self.box_h = rect.height()
+        # 居中显示
+        self.setPos(rect.center())
+        
+        # Base BBox (can be hidden or shown, usually drawn as dashed)
+        self.rect_item = QGraphicsRectItem(self)
+        if is_temp:
+            # 透明无边框的幽灵预览
+            self.rect_item.setPen(QPen(Qt.NoPen))
+            self.rect_item.setBrush(QBrush(Qt.NoBrush))
+        else:
+            self.rect_item.setPen(QPen(Qt.NoPen)) # 默认无边框
+            self.rect_item.setBrush(QBrush(Qt.NoBrush))
+        
+        self.rotate_line = QGraphicsLineItem(self)
+        if is_temp:
+            self.rotate_line.setPen(QPen(Qt.NoPen))
+        else:
+            self.rotate_line.setPen(QPen(QColor(50, 255, 50, 200), 1.5))
+
+        self.h_top = OBBHandle('top', self)
+        self.h_bottom = OBBHandle('bottom', self)
+        self.h_left = OBBHandle('left', self)
+        self.h_right = OBBHandle('right', self)
+        self.h_rotate = OBBHandle('rotate', self)
+        self.h_tl = OBBHandle('tl', self)
+        self.h_tr = OBBHandle('tr', self)
+        self.h_bl = OBBHandle('bl', self)
+        self.h_br = OBBHandle('br', self)
+
+        self.handles = [self.h_top, self.h_bottom, self.h_left, self.h_right, self.h_rotate, self.h_tl, self.h_tr, self.h_bl, self.h_br, self.rotate_line]
+
+        self.kps = []
+        self.lines = []
+        
+        self._is_initializing = True
+
+        # Initialize keypoints
+        kps_info = template.get("keypoints", [])
+        for i, kp_info in enumerate(kps_info):
+            handle = KeypointHandle(i, kp_info, self)
+            def_pos = kp_info.get("default_pos", [0.5, 0.5])
+            # position relative to bounding box center (-w/2 to w/2)
+            px = (def_pos[0] - 0.5) * self.box_w
+            py = (def_pos[1] - 0.5) * self.box_h
+            handle.setPos(px, py)
+            self.kps.append(handle)
+            
+        # Initialize lines
+        connections = template.get("connections", [])
+        for p1, p2 in connections:
+            if 0 <= p1 < len(self.kps) and 0 <= p2 < len(self.kps):
+                line = QGraphicsLineItem(self)
+                line.setZValue(1001)
+                self.lines.append((line, p1, p2))
+                
+        self._is_initializing = False
+        
+        self.update_bounding_box()  # Automatically snap to Ultralytics tight bounds on creation
+        self.update_geometry()
+        self.update_lines()
+        self._update_handle_visibility()
+        
+        if not is_temp:
+            self.setup_label(self)
+            if label: self.update_label_text(label)
+            self.update_label_position(self)
+            
+        if is_temp:
+            for h in self.handles:
+                h.hide()
+
+    def update_geometry(self):
+        w, h = self.box_w, self.box_h
+        self.rect_item.setRect(-w / 2, -h / 2, w, h)
+
+        self.h_top.setPos(0, -h / 2)
+        self.h_bottom.setPos(0, h / 2)
+        self.h_left.setPos(-w / 2, 0)
+        self.h_right.setPos(w / 2, 0)
+
+        self.h_tl.setPos(-w / 2, -h / 2)
+        self.h_tr.setPos(w / 2, -h / 2)
+        self.h_bl.setPos(-w / 2, h / 2)
+        self.h_br.setPos(w / 2, h / 2)
+
+        self.h_rotate.setPos(0, -h / 2 - 30)
+        self.rotate_line.setLine(0, -h / 2, 0, -h / 2 - 30)
+
+        self.prepareGeometryChange()
+        if not self.is_temp:
+            self.update_label_position(self)
+
+    def boundingRect(self):
+        r = self.box_h / 2 + 35
+        return QRectF(-self.box_w / 2 - 10, -r, self.box_w + 20, r + self.box_h / 2 + 10)
+
+    def shape(self):
+        path = QPainterPath()
+        
+        # Add keypoints to path
+        for kp in self.kps:
+            if kp.visible_state > 0:
+                r = 8
+                path.addEllipse(kp.pos(), r, r)
+                
+        # Add lines to path
+        line_path = QPainterPath()
+        has_lines = False
+        for line_item, p1, p2 in self.lines:
+            kp1 = self.kps[p1]
+            kp2 = self.kps[p2]
+            if kp1.visible_state > 0 and kp2.visible_state > 0:
+                line_path.moveTo(kp1.pos())
+                line_path.lineTo(kp2.pos())
+                has_lines = True
+                
+        if has_lines:
+            stroker = QPainterPathStroker()
+            stroker.setWidth(10) # 10 pixels wide hit area for lines
+            stroker.setCapStyle(Qt.RoundCap)
+            stroker.setJoinStyle(Qt.RoundJoin)
+            path.addPath(stroker.createStroke(line_path))
+            
+        # If the item is selected, we might want the bounding box to be part of the shape
+        # But for stricter hit detection matching the user's request, we only return the skeleton.
+        # Wait, if we return only the skeleton, then we can only drag the skeleton by its bones/joints.
+        # This is exactly what the user wants: "需要靠近关键点或者点与点连接线、在线上才出现小手状态"
+        
+        # However, to make sure the handles (like rotate/scale) can be clicked, we don't need to add them to `shape()`.
+        # Child items (handles) handle their own hit testing.
+        return path
+
+    def paint(self, painter, option, widget=None):
+        pass
+        
+    def update_lines(self):
+        for line_item, p1, p2 in self.lines:
+            kp1 = self.kps[p1]
+            kp2 = self.kps[p2]
+            line_item.setLine(kp1.pos().x(), kp1.pos().y(), kp2.pos().x(), kp2.pos().y())
+            # Color logic based on visibility
+            if kp1.visible_state == 0 or kp2.visible_state == 0:
+                line_item.hide()
+            else:
+                line_item.show()
+                width = 4 if (getattr(self, '_hovered', False) or self.isSelected()) else 2
+                line_item.setPen(QPen(kp1.color, width))
+                if kp1.visible_state == 1 or kp2.visible_state == 1:
+                    line_item.setOpacity(0.5)
+                else:
+                    line_item.setOpacity(1.0)
+                    
+    def update_bounding_box(self):
+        if getattr(self, '_is_initializing', False): return
+        if not self.kps: return
+        
+        # Allow keypoints to expand the box if dragged outside
+        if not self.kps or getattr(self, '_is_resizing', False): return
+        if getattr(self, '_updating_bbox', False): return
+        
+        min_x = min(kp.pos().x() for kp in self.kps)
+        max_x = max(kp.pos().x() for kp in self.kps)
+        min_y = min(kp.pos().y() for kp in self.kps)
+        max_y = max(kp.pos().y() for kp in self.kps)
+        
+        # Calculate new local bounding box for keypoints tightly
+        padding = 7.5 # Ultralytics standard padding is exactly 7.5px per side (15px total width/height addition)
+        new_w = max((max_x - min_x) + padding * 2, 15)
+        new_h = max((max_y - min_y) + padding * 2, 15)
+        
+        target_rect = QRectF(min_x - padding, min_y - padding, new_w, new_h)
+        curr_rect = QRectF(-self.box_w/2, -self.box_h/2, self.box_w, self.box_h)
+        
+        # Check if the bounding box needs to shrink or expand (with a small epsilon to avoid jitter)
+        if abs(target_rect.width() - curr_rect.width()) > 0.5 or \
+           abs(target_rect.height() - curr_rect.height()) > 0.5 or \
+           abs(target_rect.center().x()) > 0.5 or abs(target_rect.center().y()) > 0.5:
+            
+            self._updating_bbox = True
+            
+            # The shift in local coordinates to re-center
+            shift_x = target_rect.center().x()
+            shift_y = target_rect.center().y()
+            
+            # Move the shape to the new center in scene coordinates
+            new_center_scene = self.mapToScene(QPointF(shift_x, shift_y))
+            self.setPos(new_center_scene)
+            
+            # Update box dimensions tightly
+            self.box_w = target_rect.width()
+            self.box_h = target_rect.height()
+            
+            # Counter-shift all keypoints so they stay in the same visual place
+            for kp in self.kps:
+                kp.setPos(kp.pos().x() - shift_x, kp.pos().y() - shift_y)
+                
+            self.update_geometry()
+            self._updating_bbox = False
+
+    def _scale_keypoints(self, old_w, old_h, new_w, new_h):
+        if old_w == 0 or old_h == 0: return
+        sx = new_w / old_w
+        sy = new_h / old_h
+        for kp in self.kps:
+            kp.setPos(kp.pos().x() * sx, kp.pos().y() * sy)
+
+    def handle_dragged(self, handle_type, scene_pos):
+        self._is_resizing = True
+        local_pos = self.mapFromScene(scene_pos)
+        old_w, old_h = self.box_w, self.box_h
+
+        if handle_type == 'top':
+            dy = local_pos.y() - (-self.box_h / 2)
+            if self.box_h - dy < 5: dy = self.box_h - 5
+            self.box_h -= dy
+            scene_offset = self.mapToScene(QPointF(0, dy / 2)) - self.mapToScene(QPointF(0, 0))
+            self.setPos(self.pos() + scene_offset)
+            self._scale_keypoints(old_w, old_h, self.box_w, self.box_h)
+
+        elif handle_type == 'bottom':
+            dy = local_pos.y() - (self.box_h / 2)
+            if self.box_h + dy < 5: dy = -(self.box_h - 5)
+            self.box_h += dy
+            scene_offset = self.mapToScene(QPointF(0, dy / 2)) - self.mapToScene(QPointF(0, 0))
+            self.setPos(self.pos() + scene_offset)
+            self._scale_keypoints(old_w, old_h, self.box_w, self.box_h)
+
+        elif handle_type == 'left':
+            dx = local_pos.x() - (-self.box_w / 2)
+            if self.box_w - dx < 5: dx = self.box_w - 5
+            self.box_w -= dx
+            scene_offset = self.mapToScene(QPointF(dx / 2, 0)) - self.mapToScene(QPointF(0, 0))
+            self.setPos(self.pos() + scene_offset)
+            self._scale_keypoints(old_w, old_h, self.box_w, self.box_h)
+
+        elif handle_type == 'right':
+            dx = local_pos.x() - (self.box_w / 2)
+            if self.box_w + dx < 5: dx = -(self.box_w - 5)
+            self.box_w += dx
+            scene_offset = self.mapToScene(QPointF(dx / 2, 0)) - self.mapToScene(QPointF(0, 0))
+            self.setPos(self.pos() + scene_offset)
+            self._scale_keypoints(old_w, old_h, self.box_w, self.box_h)
+
+        elif handle_type in ['tl', 'tr', 'bl', 'br']:
+            # For corners, we scale proportionally or freeform
+            dx = local_pos.x() - (-self.box_w / 2 if 'l' in handle_type else self.box_w / 2)
+            dy = local_pos.y() - (-self.box_h / 2 if 't' in handle_type else self.box_h / 2)
+            
+            if 'l' in handle_type:
+                if self.box_w - dx < 5: dx = self.box_w - 5
+                self.box_w -= dx
+            else:
+                if self.box_w + dx < 5: dx = -(self.box_w - 5)
+                self.box_w += dx
+                
+            if 't' in handle_type:
+                if self.box_h - dy < 5: dy = self.box_h - 5
+                self.box_h -= dy
+            else:
+                if self.box_h + dy < 5: dy = -(self.box_h - 5)
+                self.box_h += dy
+
+            cx_off = dx / 2 if 'l' in handle_type else dx / 2
+            cy_off = dy / 2 if 't' in handle_type else dy / 2
+            scene_offset = self.mapToScene(QPointF(cx_off, cy_off)) - self.mapToScene(QPointF(0, 0))
+            self.setPos(self.pos() + scene_offset)
+            self._scale_keypoints(old_w, old_h, self.box_w, self.box_h)
+
+        elif handle_type == 'rotate':
+            center_scene = self.mapToScene(QPointF(0, 0))
+            dx = scene_pos.x() - center_scene.x()
+            dy = scene_pos.y() - center_scene.y()
+            angle_deg = math.degrees(math.atan2(dy, dx))
+            self.setRotation(angle_deg + 90)
+
+        self.update_geometry()
+        self._is_resizing = False
+
+    def set_hover_state(self, state):
+        self._hovered = state
+        if not self.isSelected():
+            if state:
+                # 未选中时，靠近骨架线/关键点显示手指光标，提示可点击进入编辑
+                self.setCursor(Qt.PointingHandCursor)
+                # 悬停显示浅绿色虚线提示框
+                self.rect_item.setPen(QPen(QColor(50, 255, 50, 150), 2, Qt.DashLine))
+                self.rect_item.show()
+            else:
+                self.unsetCursor()
+                self.rect_item.setPen(QPen(Qt.NoPen))
+                self.rect_item.hide()
+        else:
+            if state:
+                self.setCursor(Qt.OpenHandCursor)
+                self.rect_item.setPen(QPen(QColor(50, 255, 50, 255), 2))
+            else:
+                self.unsetCursor()
+                self.rect_item.setPen(QPen(QColor(50, 255, 50, 200), 2))
+                self.rect_item.show()
+
+        # Update visual size of keypoints
+        scale_factor = 1.5 if (state or self.isSelected()) else 1.0
+        for kp in self.kps:
+            kp.setScale(scale_factor)
+
+        self.update_lines()
+        self._update_handle_visibility()
+        self.update_label_visibility(self, is_selected=self.isSelected(), is_hovered=state)
+
+    def hoverEnterEvent(self, event):
+        self.set_hover_state(True)
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.set_hover_state(False)
+        super().hoverLeaveEvent(event)
+    def _update_handle_visibility(self):
+        if self.is_temp: return
+        # 默认不显示外框和手柄，只有在选中状态且被 hovered 或处于编辑模式时显示
+        # 严格控制编辑模式
+        visible = self.isSelected()
+        
+        # 控制矩形边框的显示
+        if visible or getattr(self, '_hovered', False):
+            self.rect_item.show()
+        else:
+            self.rect_item.hide()
+            
+        if visible:
+            self.rotate_line.show()
+        else:
+            self.rotate_line.hide()
+
+        for h in self.handles:
+            h.setVisible(visible)
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemPositionChange and not getattr(self, 'is_temp', False) and not getattr(self, '_is_resizing', False):
+            return super().itemChange(change, clamp_item_position(self, value, overflow_ratio=0.5))
+        if change == QGraphicsItem.ItemSelectedHasChanged:
+            self.set_hover_state(getattr(self, '_hovered', False))
+        elif change == QGraphicsItem.ItemPositionHasChanged:
+            if not self.is_temp:
+                self.update_label_position(self)
         return super().itemChange(change, value)
 
 
@@ -482,7 +1010,7 @@ class OBBHandle(QGraphicsItem):
 
     def __init__(self, handle_type, parent):
         super().__init__(parent)
-        self.handle_type = handle_type  # 'top', 'bottom', 'left', 'right', 'rotate'
+        self.handle_type = handle_type  # 'top', 'bottom', 'left', 'right', 'rotate', 'tl', 'tr', 'bl', 'br'
         self.setAcceptHoverEvents(True)
         self.setZValue(100)
 
@@ -491,8 +1019,8 @@ class OBBHandle(QGraphicsItem):
             self.w, self.h = 16, 6  # 横向胶囊
         elif self.handle_type in ['left', 'right']:
             self.w, self.h = 6, 16  # 纵向胶囊
-        elif self.handle_type == 'rotate':
-            self.w, self.h = 10, 10  # 旋转圆球
+        elif self.handle_type in ['rotate', 'tl', 'tr', 'bl', 'br']:
+            self.w, self.h = 10, 10  # 旋转圆球和角落圆球
 
     def boundingRect(self):
         return QRectF(-self.w / 2, -self.h / 2, self.w, self.h)
@@ -501,7 +1029,7 @@ class OBBHandle(QGraphicsItem):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setBrush(QBrush(QColor(255, 255, 255)))
         painter.setPen(QPen(QColor(28, 126, 214), 2))
-        if self.handle_type == 'rotate':
+        if self.handle_type in ['rotate', 'tl', 'tr', 'bl', 'br']:
             painter.drawEllipse(self.boundingRect())
         else:
             painter.drawRoundedRect(self.boundingRect(), min(self.w, self.h) / 2, min(self.w, self.h) / 2)
@@ -509,6 +1037,10 @@ class OBBHandle(QGraphicsItem):
     def hoverEnterEvent(self, event):
         if self.handle_type == 'rotate':
             self.setCursor(Qt.OpenHandCursor)
+        elif self.handle_type in ['tl', 'br']:
+            self.setCursor(Qt.SizeFDiagCursor)
+        elif self.handle_type in ['tr', 'bl']:
+            self.setCursor(Qt.SizeBDiagCursor)
         else:
             self.setCursor(Qt.CrossCursor)
         super().hoverEnterEvent(event)
@@ -545,6 +1077,11 @@ class OBBHandle(QGraphicsItem):
             self.parentItem().setFlag(QGraphicsItem.ItemIsMovable, True)
             if self.handle_type == 'rotate':
                 self.setCursor(Qt.OpenHandCursor)
+                
+            # 通知主场景更新状态（保存撤销记录）
+            if not getattr(self.parentItem(), 'is_temp', False) and self.scene() and hasattr(self.scene(), 'state_changed'):
+                self.scene().state_changed.emit()
+                
             event.accept()
         else:
             super().mouseReleaseEvent(event)

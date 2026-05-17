@@ -1,0 +1,15 @@
+{
+    "name": "Rectangle",
+    "label": "rectangle",
+    "description": "4-point rectangle template",
+    "kpt_shape": [4, 3],
+    "keypoints": [
+        {"name": "top_left", "color": "#FF0000", "default_pos": [0.25, 0.25]},
+        {"name": "top_right", "color": "#00FF00", "default_pos": [0.75, 0.25]},
+        {"name": "bottom_right", "color": "#0000FF", "default_pos": [0.75, 0.75]},
+        {"name": "bottom_left", "color": "#FFFF00", "default_pos": [0.25, 0.75]}
+    ],
+    "connections": [
+        [0, 1], [1, 2], [2, 3], [3, 0]
+    ]
+}

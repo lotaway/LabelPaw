@@ -1,17 +1,25 @@
 import sys
 import os
 import json
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QInputDialog, QMessageBox, QLabel, QListWidgetItem
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QInputDialog, QMessageBox, QLabel, QListWidgetItem, QDialog, QMenu, QAbstractItemView
 from PySide6.QtCore import Qt, QPointF, QRectF
-from PySide6.QtGui import QPolygonF
-
+from PySide6.QtGui import QPainter, QIcon, QPixmap, QColor, QAction, QActionGroup, QPolygonF, QMovie
 from main_dataset_tool import DatasetToolWindow
-from ui.main_window import Ui_MainWindow
+try:
+    from ui.author_info import AuthorInfoDialog
+except ImportError:
+    pass
+from ui.main_window import Ui_MainWindow, TemplateSelectorWidget, FormatSelectorWidget
+from ui.template_dialog import SkeletonTemplateDialog
+from ui.model_selector_dialog import ModelSelectorDialog
+from ui.theme import DARK_THEME, LIGHT_THEME
 from core.canvas import Canvas, CanvasMode
-from core.sam_client import SAMClient
+from core.sam_client import SAMClient, SAM_MODEL_MAP
 from core.exporter import Exporter
-from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape
+from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
+from core.pose_template import TemplateManager
 from utils.message import DialogOver
+from core.yolo_predictor import YoloPredictorWorker
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -19,8 +27,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
 
-        with open(os.path.join(os.path.dirname(__file__), "ui/style.qss"), "r", encoding="utf-8") as f:
-            self.setStyleSheet(f.read())
+        self.template_manager = TemplateManager()
+
+        self.is_dark_theme = False
+        self.setStyleSheet(LIGHT_THEME)
 
         self.scene = Canvas(self)
         self.view.setScene(self.scene)
@@ -47,12 +57,150 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.redo_stack = []
         self.max_history_steps = 20  # 保留20步历史记录
         self.scene.state_changed.connect(self.push_state)  # 绑定画板信号
+        
+        self._init_pose_templates()
 
         self._connect_signals()
         self._set_mode(CanvasMode.RECT)
-        self.sam_client.load_model_async(r"E:\2-浏览器下载的文件\sam3.pt")  # 模型路径
+        
+        # 初始化模型下拉菜单
+        self._init_model_selector()
+        
+        # 默认加载 SAM 3
+        self.on_model_selected("sam3")
+        
+        self.yolo_worker = None
+        
+        self.btnPredict.setIcon(QIcon("ui/icon/lightning-fill.svg"))
+        
+        # 预测按钮动画
+        self.predict_movie = QMovie("ui/icon/Loading.gif")
+        self.predict_movie.frameChanged.connect(self.update_predict_icon)
+
+    def update_predict_icon(self):
+        self.btnPredict.setIcon(QIcon(self.predict_movie.currentPixmap()))
+
+    def _init_pose_templates(self):
+        templates = self.template_manager.get_template_names()
+        self.templateWidget.update_templates(templates, main_window=self)
+        if not self.scene.current_pose_template:
+            self.scene.current_pose_template = self.template_manager.get_template("Person (COCO)")
+
+    def _init_model_selector(self):
+        self.btnModelSelector.clicked.connect(self._show_model_selector)
+
+    def _show_model_selector(self):
+        dialog = ModelSelectorDialog(current_model_key=getattr(self.sam_client, 'current_model_key', None), is_dark_theme=self.is_dark_theme, parent=self)
+        dialog.model_selected.connect(self.on_model_selected)
+        
+        # Position popup near button
+        pos = self.btnModelSelector.mapToGlobal(self.btnModelSelector.rect().bottomLeft())
+        dialog.move(pos.x(), pos.y() + 5)
+        dialog.exec()
+
+    def on_model_selected(self, model_info_or_key):
+        if isinstance(model_info_or_key, str):
+            key = model_info_or_key
+            if key in SAM_MODEL_MAP:
+                model_info = SAM_MODEL_MAP[key]
+            else:
+                model_info = {"key": key, "display_name": key, "type": "sam2", "supports_text": False}
+        else:
+            model_info = model_info_or_key
+            key = model_info["key"]
+            
+        display_name = model_info.get("display_name", key)
+        
+        self.btnModelSelector.setText(f" {display_name} ▾")
+        self.btnModelSelector.setIcon(QIcon("ui/icon/s.svg"))
+        
+        if model_info.get("type", "").startswith("sam"):
+            self.btnPredict.hide()
+            self.current_yolo_predictor = None
+            if key not in SAM_MODEL_MAP:
+                SAM_MODEL_MAP[key] = model_info
+            self.sam_client.load_model_by_key(key)
+        elif model_info.get("type", "").startswith("yolo"):
+            self.sam_client.cleanup()
+            self.sam_client.current_model_key = key
+            from core.yolo_predictor import YoloPredictor
+            path = model_info.get("path", "")
+            if path and os.path.exists(path):
+                try:
+                    self.current_yolo_predictor = YoloPredictor(path)
+                    
+                    # 自动根据 YOLO 任务类型切换绘制模式
+                    task = getattr(self.current_yolo_predictor, 'task', 'detect')
+                    if task == 'detect':
+                        self.actionRect.trigger()
+                    elif task == 'segment':
+                        self.actionPoly.trigger()
+                    elif task == 'pose':
+                        self.actionPoint.trigger()
+                    elif task == 'obb':
+                        self.actionRBox.trigger()
+                        
+                    self.statusBar.showMessage(f"已加载 YOLO 模型: {display_name}。")
+                    self.update_model_status(True, f"{display_name} 已就绪")
+                    self.btnPredict.show()
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    self.statusBar.showMessage(f"加载 YOLO 模型失败: {str(e)}")
+                    self.update_model_status(False, "加载失败")
+                    self.btnPredict.hide()
+            else:
+                self.statusBar.showMessage(f"未找到对应的 YOLO 模型文件")
+                self.update_model_status(False, f"无权重文件")
+                self.btnPredict.hide()
+        else:
+            self.btnPredict.hide()
+            self.current_yolo_predictor = None
+            self.sam_client.cleanup()
+            self.sam_client.current_model_key = key
+            self.statusBar.showMessage(f"已选择模型: {display_name}。非 SAM 模型暂不支持智能推理。")
+            self.update_model_status(True, f"{display_name} 已就绪 (纯本地/云端)")
+        
+        supports_text = model_info.get("supports_text", False)
+        
+        # 只有不在点标注模式下才启用，因为点标注即使是SAM3也不可用
+        if self.scene.mode != CanvasMode.POINT:
+            self.samPromptInput.setEnabled(supports_text)
+            self.samPromptBtn.setEnabled(supports_text)
+            if supports_text:
+                self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog)")
+            else:
+                self.samPromptInput.setPlaceholderText(f"{display_name} 不支持提示词")
+
+    def edit_pose_template(self, name):
+        dlg = SkeletonTemplateDialog(self, self.template_manager, self.is_dark_theme)
+        dlg.load_template(name)
+        dlg.name_edit.setText(name)
+        if dlg.exec() == QDialog.Accepted:
+            self._init_pose_templates()
+            self.templateWidget._on_template_selected(name, f"{name} ▾")
+
+    def delete_pose_template(self, name):
+        from PySide6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(self, "删除骨架模板", f"确定要删除骨架模板 '{name}' 吗？", QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.template_manager.delete_template(name)
+            self._init_pose_templates()
+            self.templateWidget._on_template_selected("Person (COCO)", "Person (COCO) ▾")
 
     def _connect_signals(self):
+        self.templateWidget.edit_template.connect(self.edit_pose_template)
+        self.templateWidget.delete_template.connect(self.delete_pose_template)
+        self.btnAuthorInfo.clicked.connect(self.show_author_info)
+        self.btnCollapse.clicked.connect(self.toggle_sidebar)
+        self.btnThemeToggle.clicked.connect(self.toggle_theme)
+
+        self.btnUndo.clicked.connect(self.undo)
+        self.btnRedo.clicked.connect(self.redo)
+        self.btnDelete.clicked.connect(self.delete_selected)
+        self.btnSave.clicked.connect(lambda: self.save_annotation(self.current_format))
+        self.btnKeyboard.clicked.connect(self.show_help_dialog)
+
         self.actionOpen.triggered.connect(self.open_dir)
 
         # 下拉菜单组件信号
@@ -69,12 +217,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionPoint.triggered.connect(lambda checked=False: self._set_mode(CanvasMode.POINT))
         self.actionRBox.triggered.connect(lambda checked=False: self._set_mode(CanvasMode.RBOX))
 
+        self.templateWidget.template_changed.connect(self.on_pose_template_changed)
+
         self.samSwitch.toggled.connect(self.on_sam_toggled)
+
+        # 同步顶部 Draw / Smart 按钮与 SAM 开关状态
+        self.btnDrawMode.toggled.connect(lambda checked: self.samSwitch.setChecked(False) if checked else None)
+        self.btnSmartMode.toggled.connect(lambda checked: self.samSwitch.setChecked(True) if checked else None)
+
+        self.btnPredict.clicked.connect(self.on_predict_clicked)
 
         self.samPromptBtn.clicked.connect(self.trigger_sam_prompt)
         self.samPromptInput.returnPressed.connect(self.trigger_sam_prompt)
 
         self.listFiles.currentItemChanged.connect(self.on_file_selected)
+        self.listFiles.customContextMenuRequested.connect(self.show_file_list_context_menu)
         self.scene.mouse_moved.connect(self.update_coordinate_label)
         self.scene.shape_drawn.connect(self.handle_new_shape)
 
@@ -82,7 +239,183 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.listClasses.itemChanged.connect(self.on_list_item_changed)
 
-        self.btnHelp.clicked.connect(self.show_help_dialog)
+    def on_predict_clicked(self):
+        if not self.current_image_path:
+            DialogOver(self, "请先打开一张图片！", "提示", "warning")
+            return
+            
+        if not getattr(self, 'current_yolo_predictor', None):
+            DialogOver(self, "YOLO 模型未加载或初始化失败！", "提示", "warning")
+            return
+            
+        if self.yolo_worker and self.yolo_worker.isRunning():
+            return
+            
+        self.statusBar.showMessage("正在使用 YOLO 进行预测...")
+        self.original_predict_text = self.btnPredict.text()
+        self.btnPredict.setText("预测中")
+        
+        self.predict_movie.start()
+        self.btnPredict.setEnabled(False)
+        
+        self.yolo_worker = YoloPredictorWorker(self.current_yolo_predictor, self.current_image_path)
+        self.yolo_worker.finished.connect(self.on_predict_finished)
+        self.yolo_worker.error.connect(self.on_predict_error)
+        self.yolo_worker.start()
+
+    def on_predict_finished(self, shapes):
+        self.predict_movie.stop()
+        self.btnPredict.setText(self.original_predict_text)
+        self.btnPredict.setIcon(QIcon("ui/icon/lightning-fill.svg"))
+        self.btnPredict.setEnabled(True)
+        
+        if not shapes:
+            DialogOver(self, "未找到任何预测结果", "提示", "info")
+            self.statusBar.showMessage("预测完成，未找到任何结果")
+            return
+            
+        # Get existing shapes for deduplication
+        existing_shapes = []
+        for item in self.scene.items():
+            from core.shapes import BaseShape
+            if isinstance(item, BaseShape) and not getattr(item, 'is_temp', False):
+                existing_shapes.append(item)
+            
+        # Add shapes
+        class_counts = {}
+        added_count = 0
+        
+        for s in shapes:
+            shape_type = s["type"]
+            label = s["label"]
+            data = s["data"]
+            
+            # Deduplication logic (IoU > 0.8)
+            new_rect = None
+            if shape_type == "rect":
+                new_rect = data
+            elif shape_type in ["poly", "rbox"]:
+                new_rect = data.boundingRect()
+            elif shape_type == "pose":
+                new_rect = data["rect"]
+                
+            is_duplicate = False
+            if new_rect:
+                for ext_shape in existing_shapes:
+                    if getattr(ext_shape, 'label', '') != label:
+                        continue
+                    ext_rect = ext_shape.sceneBoundingRect()
+                    
+                    intersection = new_rect.intersected(ext_rect)
+                    inter_area = max(0, intersection.width()) * max(0, intersection.height())
+                    area1 = max(0, new_rect.width()) * max(0, new_rect.height())
+                    area2 = max(0, ext_rect.width()) * max(0, ext_rect.height())
+                    union_area = area1 + area2 - inter_area
+                    
+                    if union_area > 0 and (inter_area / union_area) > 0.8:
+                        is_duplicate = True
+                        break
+                        
+            if is_duplicate:
+                continue
+            
+            added_count += 1
+            class_counts[label] = class_counts.get(label, 0) + 1
+            
+            if label not in self.class_list:
+                self.add_class_to_list(label)
+                
+            new_shape = None
+            if shape_type == "rect":
+                new_shape = RectShape(data, label)
+            elif shape_type == "poly" or shape_type == "rbox":
+                new_shape = PolyShape(data, label)
+            elif shape_type == "pose":
+                rect = data["rect"]
+                kps = data["keypoints"]
+                
+                # 优先使用模型预测结果中自带的骨架连接逻辑 (YOLO 官方定义)
+                if "skeleton" in s:
+                    yolo_skeleton = s["skeleton"]
+                    kpt_names = s.get("kpt_names", [])
+                    
+                    # 构造临时模板，直接遵循 YOLO 官网/模型的连接定义
+                    template = {
+                        "name": f"YOLO_Auto_{len(kps)}",
+                        "label": label,
+                        "keypoints": [],
+                        "connections": []
+                    }
+                    
+                    # 填充点名称
+                    for i in range(len(kps)):
+                        name = kpt_names[i] if i < len(kpt_names) else f"kp_{i}"
+                        template["keypoints"].append({"name": name, "color": "#00FF00", "default_pos": [0.5, 0.5]})
+                        
+                    # 填充连接线 (YOLO 官网通常是 1-based 索引，需要转为 0-based)
+                    for edge in yolo_skeleton:
+                        if len(edge) == 2:
+                            p1, p2 = edge[0], edge[1]
+                            # 自动检测并转换 1-based 到 0-based
+                            if p1 > 0 and p2 > 0:
+                                template["connections"].append([p1 - 1, p2 - 1])
+                            else:
+                                template["connections"].append([p1, p2])
+                else:
+                    # 兜底方案：尝试从本地模板库匹配
+                    template = self.scene.current_pose_template
+                    if not template or len(template.get("keypoints", [])) != len(kps):
+                        found_template = False
+                        for t in self.template_manager.templates:
+                            if len(t.get("keypoints", [])) == len(kps):
+                                template = t
+                                found_template = True
+                                break
+                        
+                        if not found_template:
+                            template = {"name": f"YOLO_Pose_{len(kps)}", "keypoints": [], "connections": []}
+                            for i in range(len(kps)):
+                                template["keypoints"].append({"name": f"kp_{i}", "color": "#00FF00", "default_pos": [0.5, 0.5]})
+                        
+                new_shape = PoseShape(rect, template, label)
+                for i, kp in enumerate(kps):
+                    if i < len(new_shape.kps):
+                        local_pt = new_shape.mapFromScene(kp["pos"])
+                        new_shape.kps[i].setPos(local_pt)
+                        new_shape.kps[i].set_visibility(kp["vis"])
+                
+                new_shape.update_bounding_box()
+                new_shape.update_lines()
+                
+            if new_shape:
+                self.scene.addItem(new_shape)
+                if hasattr(new_shape, 'update_label_text'):
+                    new_shape.update_label_text(label)
+                if hasattr(new_shape, 'update_label_position'):
+                    new_shape.update_label_position(new_shape)
+                    
+        if added_count == 0:
+            DialogOver(self, "暂无新的预测内容需要添加", "提示", "info")
+            self.statusBar.showMessage("预测完成，暂无新内容")
+            return
+        
+        self.save_classes()
+        self.push_state()
+        self.auto_save_annotation()
+        
+        # Format message
+        msg_parts = [f"{cls} ({count})" for cls, count in class_counts.items()]
+        msg = "添加了" + str(added_count) + "个目标：" + ", ".join(msg_parts)
+        DialogOver(self, msg + "，并进行标注", "预测成功", "success")
+        self.statusBar.showMessage(msg)
+
+    def on_predict_error(self, err_msg):
+        self.predict_movie.stop()
+        self.btnPredict.setText(self.original_predict_text)
+        self.btnPredict.setIcon(QIcon("ui/icon/lightning-fill.svg"))
+        self.btnPredict.setEnabled(True)
+        DialogOver(self, f"预测失败: {err_msg}", "错误", "danger")
+        self.statusBar.showMessage("预测出错")
 
     def add_class_to_list(self, cls_name):
         """列表项支持双击编辑"""
@@ -112,6 +445,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         # 一旦有新操作，重做（前进）堆栈必须清空
         self.redo_stack.clear()
+        self.update_undo_redo_buttons()
 
     def undo(self):
         """撤销 (Ctrl+Z)"""
@@ -122,6 +456,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # 获取上一步的状态并还原
             previous_state = self.undo_stack[-1]
             self.restore_state(previous_state)
+            self.update_undo_redo_buttons()
 
     def redo(self):
         """重做/前进 (Ctrl+Y 或 Ctrl+Shift+Z)"""
@@ -131,9 +466,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.undo_stack.append(next_state)
             # 还原该状态
             self.restore_state(next_state)
+            self.update_undo_redo_buttons()
+            
+    def update_undo_redo_buttons(self):
+        """更新撤销和重做按钮的可用状态"""
+        self.btnUndo.setEnabled(len(self.undo_stack) > 1)
+        self.btnRedo.setEnabled(len(self.redo_stack) > 0)
+        
+        # 强制刷新图标渲染
+        from PySide6.QtGui import QIcon
+        self.btnUndo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-left.svg"), self.current_icon_color))
+        self.btnRedo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-right.svg"), self.current_icon_color))
 
     def restore_state(self, state):
         """根据快照数据，完全重建画板元素"""
+        
+        # 记录当前选中状态以便恢复
+        selected_labels_or_poses = []
+        for item in self.scene.selectedItems():
+            if isinstance(item, PoseShape):
+                # We can't perfectly match pose instances across re-creation easily, 
+                # but we can try to match by rect center and label
+                selected_labels_or_poses.append({"type": "pose", "center": item.pos()})
+            elif hasattr(item, 'label'):
+                selected_labels_or_poses.append({"type": "other", "label": item.label})
+
         self.scene.clear_shapes()
         for shape_data in state:
             label = shape_data.get("label", "")
@@ -162,6 +519,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if rect_data and len(rect_data) == 4:
                     cx, cy, w, h = rect_data[0], rect_data[1], rect_data[2], rect_data[3]
                     shape = RotatedRectShape(cx, cy, w, h, angle, label)
+            elif shape_type == "pose":
+                rect_data = shape_data.get("rect")
+                template_name = shape_data.get("template_name", "")
+                kps_data = shape_data.get("keypoints", [])
+                if rect_data and len(rect_data) == 4:
+                    cx, cy, w, h = rect_data
+                    angle = shape_data.get("angle", 0)
+                    template = self.template_manager.get_template(template_name)
+                    if not template:
+                        template = {"name": template_name, "keypoints": [], "connections": []}
+                        for i, kp in enumerate(kps_data):
+                            template["keypoints"].append({"name": f"kp_{i}", "color": "#00FF00", "default_pos": [0.5, 0.5]})
+                    
+                    shape = PoseShape(QRectF(cx - w / 2, cy - h / 2, w, h), template, label)
+                    shape.setRotation(angle)
+                    for i, kp_data in enumerate(kps_data):
+                        if i < len(shape.kps):
+                            local_pt = shape.mapFromScene(QPointF(kp_data[0], kp_data[1]))
+                            shape.kps[i].setPos(local_pt)
+                            shape.kps[i].set_visibility(kp_data[2])
+                    shape.update_lines()
 
             if shape:
                 self.scene.addItem(shape)
@@ -169,8 +547,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     shape.update_label_text(label)
                 if hasattr(shape, 'update_label_position'):
                     shape.update_label_position(shape)
+                
+                # 尝试恢复选中状态 (保持编辑模式)
+                is_selected = False
+                if shape_type == "pose":
+                    for s in selected_labels_or_poses:
+                        if s["type"] == "pose" and (s["center"] - shape.pos()).manhattanLength() < 5:
+                            is_selected = True
+                            break
+                else:
+                    for s in selected_labels_or_poses:
+                        if s["type"] == "other" and s["label"] == label:
+                            is_selected = True
+                            break
+                
+                shape.setSelected(is_selected)
+                
                 if hasattr(shape, 'update_label_visibility'):
-                    shape.update_label_visibility(shape, is_selected=False, is_hovered=False)
+                    shape.update_label_visibility(shape, is_selected=is_selected, is_hovered=False)
+                if hasattr(shape, '_update_handle_visibility'):
+                    shape._update_handle_visibility()
 
         self.auto_save_annotation()
 
@@ -232,6 +628,144 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.auto_save_annotation()
 
+    def delete_selected(self):
+        for item in self.scene.selectedItems():
+            self.scene.removeItem(item)
+        self.scene.state_changed.emit()
+
+    def toggle_sidebar(self):
+        if self.toolBar.toolButtonStyle() == Qt.ToolButtonTextBesideIcon:
+            # 隐藏文字 — 收缩模式
+            self.toolBar.setToolButtonStyle(Qt.ToolButtonIconOnly)
+            self.toolBar.setFixedWidth(50)
+            self.logoLabel.hide()
+            
+            # 收缩模式：缩小 Logo 图标
+            logo_path = "ui/icon/logo.png"
+            pix = QPixmap(logo_path).scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.logoIcon.setPixmap(pix)
+            self.logoIcon.setFixedSize(24, 24)
+
+            # 释放按钮宽度限制
+            for btn in self._actionButtons:
+                btn.setMinimumWidth(0)
+
+            self.formatWidget.set_icon_only(True)
+            self.btnDatasetTool.setText("")
+            self.samIcon.hide() # 收缩时隐藏左侧图标
+            # SAM 开关竖向显示
+            self.samSwitch.setFixedSize(26, 50)
+            self.samSwitch._vertical = True
+            self.samSwitch.update()
+        else:
+            # 显示文字 — 展开模式
+            self.toolBar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            self.toolBar.setFixedWidth(190)
+            
+            # 展开模式：恢复 Logo 图标和文字
+            self.logoLabel.show()
+            self.logoLabel.setText("LabelPaw")
+            logo_path = "ui/icon/logo.png"
+            pix = QPixmap(logo_path).scaled(28, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.logoIcon.setPixmap(pix)
+            self.logoIcon.setFixedSize(28, 28)
+
+            # 恢复按钮宽度
+            for btn in self._actionButtons:
+                btn.setMinimumWidth(180)
+
+            self.formatWidget.set_icon_only(False)
+            self.btnDatasetTool.setText(" 数据集处理")
+            self.samIcon.show() # 展开时显示左侧图标
+            # SAM 开关横向显示
+            self.samSwitch.setFixedSize(50, 26)
+            self.samSwitch._vertical = False
+            self.samSwitch.update()
+
+    def set_icon_color(self, icon, color):
+        from PySide6.QtGui import QPainter, QIcon, QPixmap, QColor
+        pixmap = icon.pixmap(100, 100)
+        painter = QPainter(pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(pixmap.rect(), color)
+        painter.end()
+        
+        # 核心逻辑：自己创建一个可以响应 enable/disable 的 QIcon
+        # 我们把这个纯色图作为 Normal 状态
+        new_icon = QIcon()
+        new_icon.addPixmap(pixmap, QIcon.Normal, QIcon.On)
+        new_icon.addPixmap(pixmap, QIcon.Normal, QIcon.Off)
+        
+        # 为了让禁用状态变灰，我们用 QPainter 绘制一个半透明的版本作为 Disabled 状态
+        disabled_pixmap = icon.pixmap(100, 100)
+        dpainter = QPainter(disabled_pixmap)
+        dpainter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        
+        # 深色主题下禁用颜色为半透明白，浅色主题下为半透明黑
+        if color.lightness() > 128:
+            disabled_color = QColor(255, 255, 255, 60)
+        else:
+            disabled_color = QColor(15, 23, 42, 60)
+            
+        dpainter.fillRect(disabled_pixmap.rect(), disabled_color)
+        dpainter.end()
+        
+        new_icon.addPixmap(disabled_pixmap, QIcon.Disabled, QIcon.On)
+        new_icon.addPixmap(disabled_pixmap, QIcon.Disabled, QIcon.Off)
+        
+        return new_icon
+
+    def toggle_theme(self):
+        self.is_dark_theme = not self.is_dark_theme
+        if self.is_dark_theme:
+            self.setStyleSheet(DARK_THEME)
+            self.btnThemeToggle.setText("☀")
+            
+            # 更新深色图标
+            from PySide6.QtGui import QIcon, QColor
+            self.current_icon_color = QColor(255, 255, 255)
+            self.btnUndo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-left.svg"), self.current_icon_color))
+            self.btnRedo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-right.svg"), self.current_icon_color))
+            self.btnDelete.setIcon(self.set_icon_color(QIcon("ui/icon/trash.svg"), self.current_icon_color))
+            self.btnSave.setIcon(self.set_icon_color(QIcon("ui/icon/floppy-disk.svg"), self.current_icon_color))
+            self.btnKeyboard.setIcon(self.set_icon_color(QIcon("ui/icon/keyboard.svg"), self.current_icon_color))
+            
+            # 更新侧边栏图标
+            self.actionOpen.setIcon(self.set_icon_color(QIcon("ui/icon/folder.svg"), self.current_icon_color))
+            self.actionRect.setIcon(self.set_icon_color(QIcon("ui/icon/rectangle.svg"), self.current_icon_color))
+            self.actionPoly.setIcon(self.set_icon_color(QIcon("ui/icon/polygon.svg"), self.current_icon_color))
+            self.actionPoint.setIcon(self.set_icon_color(QIcon("ui/icon/关键点.svg"), self.current_icon_color))
+            self.actionRBox.setIcon(self.set_icon_color(QIcon("ui/icon/手机旋转1.svg"), self.current_icon_color))
+            self.samIcon.setPixmap(self.set_icon_color(QIcon("ui/icon/魔法-copy.svg"), self.current_icon_color).pixmap(24, 24))
+            self.btnDatasetTool.setIcon(self.set_icon_color(QIcon("ui/icon/wrench.svg"), self.current_icon_color))
+            self.formatWidget.btn.setIcon(self.set_icon_color(QIcon("ui/icon/格式.svg"), self.current_icon_color))
+        else:
+            self.setStyleSheet(LIGHT_THEME)
+            self.btnThemeToggle.setText("🌙")
+            
+            # 更新浅色图标
+            from PySide6.QtGui import QIcon, QColor
+            self.current_icon_color = QColor(15, 23, 42) # 深灰色
+            self.btnUndo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-left.svg"), self.current_icon_color))
+            self.btnRedo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-right.svg"), self.current_icon_color))
+            self.btnDelete.setIcon(self.set_icon_color(QIcon("ui/icon/trash.svg"), self.current_icon_color))
+            self.btnSave.setIcon(self.set_icon_color(QIcon("ui/icon/floppy-disk.svg"), self.current_icon_color))
+            self.btnKeyboard.setIcon(self.set_icon_color(QIcon("ui/icon/keyboard.svg"), self.current_icon_color))
+            
+            # 更新侧边栏图标
+            self.actionOpen.setIcon(self.set_icon_color(QIcon("ui/icon/folder.svg"), self.current_icon_color))
+            self.actionRect.setIcon(self.set_icon_color(QIcon("ui/icon/rectangle.svg"), self.current_icon_color))
+            self.actionPoly.setIcon(self.set_icon_color(QIcon("ui/icon/polygon.svg"), self.current_icon_color))
+            self.actionPoint.setIcon(self.set_icon_color(QIcon("ui/icon/关键点.svg"), self.current_icon_color))
+            self.actionRBox.setIcon(self.set_icon_color(QIcon("ui/icon/手机旋转1.svg"), self.current_icon_color))
+            self.samIcon.setPixmap(self.set_icon_color(QIcon("ui/icon/魔法-copy.svg"), self.current_icon_color).pixmap(24, 24))
+            self.btnDatasetTool.setIcon(self.set_icon_color(QIcon("ui/icon/wrench.svg"), self.current_icon_color))
+            self.formatWidget.btn.setIcon(self.set_icon_color(QIcon("ui/icon/格式.svg"), self.current_icon_color))
+
+    def show_author_info(self):
+        dialog = AuthorInfoDialog(self)
+        dialog.exec()
+
     def show_help_dialog(self):
         help_text = """
         <h3>【快捷键大全】</h3>
@@ -242,8 +776,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             <li><b style="color:blue;">Q</b>：开启/关闭 SAM 智能辅助</li>
             <li><b>R</b>：切换至 矩形标注</li>
             <li><b>P</b>：切换至 多边形标注</li>
-            <li><b>T</b>：切换至 点标注</li>
+            <li><b>T</b>：切换至 关键点标注</li>
             <li><b>O</b>：切换至 旋转框标注</li>
+            <li><b>M</b>：触发 模型预测 (Smart 模式并加载模型时可用)</li>
             <li><b>Del / Backspace</b>：删除当前选中的标注框</li>
             <li><b>F1</b>：打开此帮助文档</li>
         </ul>
@@ -268,14 +803,101 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             <li><b>提示词提取</b>：在右下角输入框输入目标名称（如: dog），按回车即可一键全图抓取并打好框！左侧选中的是“矩形”还是“多边形”格式。</li>
         </ul>
         """
-        QMessageBox.about(self, "LuoHuaLabel 使用说明", help_text)
+        QMessageBox.about(self, "LabelPaw 使用说明", help_text)
 
     def update_coordinate_label(self, x, y):
         self.coordLabel.setText(f"坐标: X: {x}, Y: {y}")
 
     def on_sam_toggled(self, checked):
+        if checked and self.scene.mode == CanvasMode.POINT:
+            yolo_pred = getattr(self, "current_yolo_predictor", None)
+            is_yolo_pose = yolo_pred is not None and getattr(yolo_pred, "task", "") == "pose"
+            
+            if not is_yolo_pose:
+                # 尝试寻找并加载默认的 YOLO pose 模型
+                PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+                LOCAL_WEIGHTS_DIR = os.path.join(PROJECT_ROOT, "weights")
+                HARDCODED_DEV_DIR = r"E:\11-AI\标注工具\weights"
+                
+                if os.path.exists(LOCAL_WEIGHTS_DIR):
+                    model_base_dir = LOCAL_WEIGHTS_DIR
+                elif os.path.exists(HARDCODED_DEV_DIR):
+                    model_base_dir = HARDCODED_DEV_DIR
+                else:
+                    model_base_dir = LOCAL_WEIGHTS_DIR
+                
+                default_pose_path = None
+                default_type = ""
+                default_name = ""
+                
+                if os.path.exists(model_base_dir):
+                    for item in os.listdir(model_base_dir):
+                        item_path = os.path.join(model_base_dir, item)
+                        if os.path.isdir(item_path) and item.startswith("yolo") and item.endswith("_weights"):
+                            for f in os.listdir(item_path):
+                                if f.endswith('-pose.pt') or f.endswith('-pose.onnx'):
+                                    default_pose_path = os.path.join(item_path, f)
+                                    default_name = f.replace('.pt', '').replace('.onnx', '')
+                                    default_type = item.replace('_weights', '')
+                                    break
+                        if default_pose_path:
+                            break
+                            
+                if default_pose_path and os.path.exists(default_pose_path):
+                    self.statusBar.showMessage(f"正在为您自动切换至 {default_name} 模型...")
+                    self.on_model_selected({
+                        "key": default_name,
+                        "display_name": default_name,
+                        "type": default_type,
+                        "path": default_pose_path
+                    })
+                else:
+                    # 不再强行拦截，而是提醒用户切换模型，这样模型选择器才能显示出来
+                    self.statusBar.showMessage("当前为点标注模式，请在上方选择 YOLO 姿态模型以使用智能辅助")
+                    self.helpLabel.setText("请选择 YOLO 姿态模型")
+                    self.helpLabel.setStyleSheet("color: orange;")
+
         self.scene.set_sam_enabled(checked)
         self._update_help_text(self.scene.mode)
+        
+        # 同步更新顶部工具栏按钮
+        if checked:
+            self.btnModelSelector.show()
+            if getattr(self, 'current_yolo_predictor', None) is not None:
+                self.btnPredict.show()
+            if not self.btnSmartMode.isChecked():
+                self.btnSmartMode.setChecked(True)
+        else:
+            self.btnModelSelector.hide()
+            self.btnPredict.hide()
+            if not self.btnDrawMode.isChecked():
+                self.btnDrawMode.setChecked(True)
+
+        if self.scene.mode == CanvasMode.POINT:
+            if checked:
+                self.templateWidget.hide()
+                self.sepTemplate.hide()
+            else:
+                self.templateWidget.show()
+                self.sepTemplate.show()
+
+    def on_pose_template_changed(self, text):
+        if not text: return
+        if text == "+ New Template...":
+            dlg = SkeletonTemplateDialog(self, self.template_manager, self.is_dark_theme)
+            if dlg.exec() == QDialog.Accepted:
+                self._init_pose_templates()
+                # Select the newly created template
+                last_template = self.template_manager.get_template_names()[-1]
+                self.templateWidget._on_template_selected(last_template, f"{last_template} ▾")
+            else:
+                self.templateWidget._on_template_selected("Person (COCO)", "Person (COCO) ▾")
+        else:
+            self.scene.current_pose_template = self.template_manager.get_template(text)
+            self._update_help_text(self.scene.mode)
+            self.formatWidget.set_yolo_enabled(True)
+        # Ensure we are in point mode
+        self._set_mode(CanvasMode.POINT)
 
     def _set_mode(self, mode):
         self.scene.set_mode(mode)
@@ -293,18 +915,43 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.actionRBox.setChecked(True)
 
         if mode == CanvasMode.POINT:
-            if self.samSwitch.isChecked():
-                self.samSwitch.setChecked(False)
+            yolo_pred = getattr(self, 'current_yolo_predictor', None)
+            is_yolo_pose = yolo_pred is not None and getattr(yolo_pred, 'task', '') == 'pose'
 
-            self.samSwitch.setEnabled(False)
+            if self.samSwitch.isChecked():
+                self.templateWidget.hide()
+                self.sepTemplate.hide()
+            else:
+                self.templateWidget.show()
+                self.sepTemplate.show()
+
+            self.samSwitch.setEnabled(True)
+            
+            # 移除自动开启逻辑，保持用户当前的手动/智能选择
+            
             self.samPromptInput.setEnabled(False)
             self.samPromptBtn.setEnabled(False)
-            self.samPromptInput.setPlaceholderText("点标注模式下 SAM 不可用")
+            self.samPromptInput.setPlaceholderText("点标注模式下文本提示不可用")
+            
+            if not self.scene.current_pose_template and not is_yolo_pose:
+                self.formatWidget.set_yolo_enabled(False)
+            else:
+                self.formatWidget.set_yolo_enabled(True)
         else:
+            self.templateWidget.hide()
+            self.sepTemplate.hide()
             self.samSwitch.setEnabled(True)
-            self.samPromptInput.setEnabled(True)
-            self.samPromptBtn.setEnabled(True)
-            self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog)")
+            
+            supports_text = self.sam_client.supports_text_prompt()
+            self.samPromptInput.setEnabled(supports_text)
+            self.samPromptBtn.setEnabled(supports_text)
+            
+            if supports_text:
+                self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog)")
+            else:
+                self.samPromptInput.setPlaceholderText("当前模型不支持提示词")
+                
+            self.formatWidget.set_yolo_enabled(True)
 
     def _update_help_text(self, mode):
         is_sam = self.samSwitch.isChecked()
@@ -319,7 +966,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             else:
                 self.helpLabel.setText("操作: 点击添加顶点，双击闭合多边形")
         elif mode == CanvasMode.POINT:
-            self.helpLabel.setText("操作: 点击添加点标注")
+            self.helpLabel.setText("操作: 点击放置骨架模板，选定后可通过手柄拖拽放大、旋转或微调关键点")
         elif mode == CanvasMode.RBOX:
             self.helpLabel.setText("操作: 拖动绘制旋转框，Z/X/C/V调整角度")
 
@@ -347,11 +994,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.scene.addItem(shape)
         QApplication.processEvents()
 
-        last_class = self.class_list[-1] if self.class_list else ""
-        default_idx = self.class_list.index(last_class) if last_class in self.class_list else 0
-
-        cls_name, ok = QInputDialog.getItem(self, "输入类别", "请选择或输入类别名称:", self.class_list, default_idx,
-                                            True)
+        from core.shapes import PoseShape
+        if isinstance(shape, PoseShape) and shape.template:
+            # 骨架模板自动使用模板标签作为类别，跳过弹窗
+            cls_name = shape.template.get("label", shape.template.get("name", "Unknown"))
+            ok = True
+        else:
+            last_class = self.class_list[-1] if self.class_list else ""
+            default_idx = self.class_list.index(last_class) if last_class in self.class_list else 0
+            cls_name, ok = QInputDialog.getItem(self, "输入类别", "请选择或输入类别名称:", self.class_list, default_idx, True)
 
         if ok and cls_name:
             cls_name = cls_name.strip()
@@ -473,14 +1124,90 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.helpLabel.setStyleSheet("color: green;")
             # 模型加载成功后，检查用户是不是已经提前打开图片了
             if self.current_image_path:
-                self.helpLabel.setText("模型已就绪，正在自动分析当前图片特征...")
-                self.helpLabel.setStyleSheet("color: orange;")
+                # self.helpLabel.setText("模型已就绪，正在自动分析当前图片特征...")
+                # self.helpLabel.setStyleSheet("color: orange;")
                 QApplication.processEvents()
                 self.sam_client.set_image(self.current_image_path)
-                self.helpLabel.setText("分析完成，可以开始智能标注")
-                self.helpLabel.setStyleSheet("color: green;")
+                # self.helpLabel.setText("分析完成，可以开始智能标注")
+                # self.helpLabel.setStyleSheet("color: green;")
         else:
             self.helpLabel.setStyleSheet("color: red;")
+
+    def show_file_list_context_menu(self, pos):
+        """显示文件列表右键菜单"""
+        selected_items = self.listFiles.selectedItems()
+        if not selected_items:
+            return
+
+        menu = QMenu()
+        # 应用主题样式
+        if self.is_dark_theme:
+            menu.setStyleSheet("QMenu { background-color: #2b2b2b; color: #fff; border: 1px solid #444; }")
+        
+        count = len(selected_items)
+        delete_action = menu.addAction(f"删除选中的 {count} 个文件")
+        delete_action.setIcon(QIcon("ui/icon/trash.svg"))
+        
+        action = menu.exec(self.listFiles.mapToGlobal(pos))
+        if action == delete_action:
+            self.delete_selected_files(selected_items)
+
+    def delete_selected_files(self, items):
+        """批量删除选中的图片及其对应的标签文件"""
+        count = len(items)
+
+        # 记录需要删除的路径
+        paths_to_delete = [item.text() for item in items]
+        
+        # 如果当前正在查看的文件被删除了，需要切换
+        current_deleted = self.current_image_path in paths_to_delete
+        
+        # 暂时断开信号避免删除过程中触发切换和自动保存
+        self.listFiles.currentItemChanged.disconnect(self.on_file_selected)
+
+        if current_deleted:
+            self.scene.clear_shapes()
+            self.scene.img_item = None
+            self.current_image_path = None
+
+        deleted_count = 0
+        for item, img_path in zip(items, paths_to_delete):
+            try:
+                # 1. 删除图片文件
+                if os.path.exists(img_path):
+                    os.remove(img_path)
+                
+                # 2. 尝试删除所有可能的标签文件 (json, txt, xml)
+                base_path = os.path.splitext(img_path)[0]
+                for ext in [".json", ".txt", ".xml"]:
+                    label_path = base_path + ext
+                    if os.path.exists(label_path):
+                        os.remove(label_path)
+                
+                # 从列表中移除
+                row = self.listFiles.row(item)
+                self.listFiles.takeItem(row)
+                
+                deleted_count += 1
+            except Exception as e:
+                print(f"删除文件 {img_path} 失败: {e}")
+
+        # 恢复信号
+        self.listFiles.currentItemChanged.connect(self.on_file_selected)
+
+        if current_deleted:
+            self.statusBar.showMessage(f"已删除 {deleted_count} 个文件，当前预览已清除")
+            # 如果列表还有文件，自动选中并加载第一项或当前项
+            if self.listFiles.count() > 0:
+                current_row = self.listFiles.currentRow()
+                if current_row < 0:
+                    current_row = 0
+                item = self.listFiles.item(current_row)
+                self.listFiles.setCurrentItem(item)
+                # 手动触发一次加载
+                self.on_file_selected(item, None)
+        else:
+            self.statusBar.showMessage(f"成功删除 {deleted_count} 个文件")
 
     def on_file_selected(self, current, previous):
         if previous:
@@ -496,14 +1223,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.undo_stack.clear()
             self.redo_stack.clear()
             self.push_state()
+            
+            # 清除旧图片的骨架预览
+            if hasattr(self.scene, 'pose_preview_item') and self.scene.pose_preview_item:
+                self.scene.removeItem(self.scene.pose_preview_item)
+                self.scene.pose_preview_item = None
 
             if self.sam_client.model:
-                self.helpLabel.setText("正在分析图片智能特征...")
-                self.helpLabel.setStyleSheet("color: orange;")
+                # self.helpLabel.setText("正在分析图片智能特征...")
+                # self.helpLabel.setStyleSheet("color: orange;")
                 QApplication.processEvents()
                 self.sam_client.set_image(path)
-                self.helpLabel.setText("分析完成，可以开始智能标注")
-                self.helpLabel.setStyleSheet("color: green;")
+                # self.helpLabel.setText("分析完成，可以开始智能标注")
+                # self.helpLabel.setStyleSheet("color: green;")
             else:
                 self.helpLabel.setText("等待后台加载模型，稍后将自动分析图片...")
                 self.helpLabel.setStyleSheet("color: orange;")
@@ -595,6 +1327,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         shape = RotatedRectShape(cx, cy, w, h, angle, label)
                     else:
                         continue
+                elif shape_type == "pose":
+                    rect_data = shape_data.get("rect")
+                    template_name = shape_data.get("template_name", "")
+                    kps_data = shape_data.get("keypoints", [])
+                    if rect_data and len(rect_data) == 4:
+                        cx, cy, w, h = rect_data
+                        angle = shape_data.get("angle", 0)
+                        template = self.template_manager.get_template(template_name)
+                        if not template:
+                            # 降级处理，或者用空模板
+                            template = {"name": template_name, "keypoints": [], "connections": []}
+                            for i, kp in enumerate(kps_data):
+                                template["keypoints"].append({"name": f"kp_{i}", "color": "#00FF00", "default_pos": [0.5, 0.5]})
+                        
+                        shape = PoseShape(QRectF(cx - w / 2, cy - h / 2, w, h), template, label)
+                        shape.setRotation(angle)
+                        # 设置读取的关键点位置和可见性
+                        for i, kp_data in enumerate(kps_data):
+                            if i < len(shape.kps):
+                                local_pt = shape.mapFromScene(QPointF(kp_data[0], kp_data[1]))
+                                shape.kps[i].setPos(local_pt)
+                                shape.kps[i].set_visibility(kp_data[2])
+                        shape.update_lines()
+                    else:
+                        continue
                 else:
                     continue
                 self._add_shape_to_scene(shape, label)
@@ -637,14 +1394,51 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     # 重新生成带有完美手柄的 OBB 对象
                     shape = RotatedRectShape(cx, cy, w, h, angle, label)
 
-                elif len(parts) > 9 and len(parts) % 2 == 1:
+                # YOLO Pose / Polygon 格式冲突处理
+                elif len(parts) > 5:
+                    # 尝试解析为 Pose
+                    is_pose = False
+                    kp_parts = parts[5:]
+                    has_vis = (len(kp_parts) % 3 == 0)
+                    kp_count = len(kp_parts) // 3 if has_vis else len(kp_parts) // 2
+                    
+                    template = self.scene.current_pose_template
+                    if template and len(template.get("keypoints", [])) == kp_count:
+                        is_pose = True
+                    elif has_vis and len(parts) % 2 == 0: # 通常 Polygon 长度为奇数，如果有 visibility 导致长度为偶数且符合 3N，则肯定是 Pose
+                        is_pose = True
+                        
+                    if is_pose:
+                        cx, cy = float(parts[1]) * img_w, float(parts[2]) * img_h
+                        w, h = float(parts[3]) * img_w, float(parts[4]) * img_h
+                        if not template or len(template.get("keypoints", [])) != kp_count:
+                            template = {"name": "YOLO_Import", "keypoints": [], "connections": []}
+                            for i in range(kp_count):
+                                template["keypoints"].append({"name": f"kp_{i}", "color": "#00FF00", "default_pos": [0.5, 0.5]})
+                        
+                        shape = PoseShape(QRectF(cx - w / 2, cy - h / 2, w, h), template, label)
+                        idx = 0
+                        for i in range(kp_count):
+                            kx = float(kp_parts[idx]) * img_w
+                            ky = float(kp_parts[idx+1]) * img_h
+                            vis = int(float(kp_parts[idx+2])) if has_vis else 2
+                            idx += 3 if has_vis else 2
+                            if i < len(shape.kps):
+                                local_pt = shape.mapFromScene(QPointF(kx, ky))
+                                shape.kps[i].setPos(local_pt)
+                                shape.kps[i].set_visibility(vis)
+                        shape.update_lines()
+                        self._add_shape_to_scene(shape, label)
+                        continue
+
+                # 如果不是 Pose，且满足多边形条件
+                if len(parts) > 5 and len(parts) % 2 == 1:
                     qpoints = [QPointF(float(parts[i]) * img_w, float(parts[i + 1]) * img_h) for i in
                                range(1, len(parts), 2)]
                     shape = PolyShape(QPolygonF(qpoints), label)
+                    self._add_shape_to_scene(shape, label)
                 else:
                     continue
-
-                self._add_shape_to_scene(shape, label)
         except Exception as e:
             print(f"加载 YOLO 标注失败: {e}")
 
@@ -723,6 +1517,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             current_idx = self.listFiles.currentRow()
             if current_idx > 0:
                 self.listFiles.setCurrentRow(current_idx - 1)
+        elif key == Qt.Key_Return or key == Qt.Key_Enter or key == Qt.Key_Escape:
+            # 取消所有选中状态 (退出编辑模式)
+            for item in self.scene.selectedItems():
+                item.setSelected(False)
         elif key == Qt.Key_S and modifiers == Qt.ControlModifier:
             self.save_annotation(self.current_format)
         elif key == Qt.Key_E:  # 快捷键 E 修改类别
@@ -733,16 +1531,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     break
 
         elif key == Qt.Key_Q:
-            if self.scene.mode == CanvasMode.POINT:
-                DialogOver(self, "点标注模式下无法使用 SAM 智能提取", "提示", "warning")
-            else:
-                self.samSwitch.setChecked(not self.samSwitch.isChecked())
+            self.samSwitch.setChecked(not self.samSwitch.isChecked())
         elif key == Qt.Key_F1:
             self.show_help_dialog()
         elif key == Qt.Key_R:
             self.actionRect.trigger()
         elif key == Qt.Key_P:
             self.actionPoly.trigger()
+        elif key == Qt.Key_M:
+            # M for Model Prediction in Smart mode
+            if self.samSwitch.isChecked() and getattr(self, 'current_yolo_predictor', None) is not None:
+                self.btnPredict.click()
         elif key == Qt.Key_T:
             self.actionPoint.trigger()
         elif key == Qt.Key_O:

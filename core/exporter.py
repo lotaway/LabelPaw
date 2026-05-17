@@ -2,7 +2,7 @@ import json
 import os
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
-from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape
+from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
 
 
 class Exporter:
@@ -18,6 +18,22 @@ class Exporter:
                     "label": item.label,
                     "type": "rectangle",
                     "points": [[p1.x(), p1.y()], [p2.x(), p2.y()]]
+                })
+            elif isinstance(item, PoseShape) and not getattr(item, 'is_temp', False):
+                # Export pose
+                keypoints = []
+                for kp in item.kps:
+                    pos = kp.scenePos()
+                    keypoints.append([pos.x(), pos.y(), kp.visible_state])
+                shapes_data.append({
+                    "label": item.label,
+                    "type": "pose",
+                    "points": [],
+                    "rect": [item.pos().x(), item.pos().y(), item.box_w, item.box_h],
+                    "angle": item.rotation(),
+                    "keypoints": keypoints,
+                    "kpt_shape": item.template.get("kpt_shape", [len(item.kps), 3]),
+                    "template_name": item.template.get("name", "Unknown")
                 })
             elif isinstance(item, PolyShape) and not getattr(item, 'is_temp', False):
                 poly = item.polygon()
@@ -77,6 +93,11 @@ class Exporter:
             if shape_type == "obb":
                 shape_dict["angle"] = s.get("angle", 0)
                 shape_dict["rect"] = s.get("rect", [0, 0, 0, 0])
+            elif shape_type == "pose":
+                shape_dict["rect"] = s.get("rect", [0, 0, 0, 0])
+                shape_dict["kpt_shape"] = s.get("kpt_shape", [])
+                shape_dict["keypoints"] = s.get("keypoints", [])
+                shape_dict["template_name"] = s.get("template_name", "")
 
             data["shapes"].append(shape_dict)
 
@@ -99,6 +120,29 @@ class Exporter:
                 w = abs(x2 - x1) / image_width
                 h = abs(y2 - y1) / image_height
                 lines.append(f"{class_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+
+            elif s["type"] == "pose":
+                rect = s.get("rect", [0, 0, 0, 0])
+                cx = rect[0] / image_width
+                cy = rect[1] / image_height
+                w = rect[2] / image_width
+                h = rect[3] / image_height
+                
+                # Ensure coordinates are properly normalized and within bounds [0, 1]
+                cx = max(0.0, min(1.0, cx))
+                cy = max(0.0, min(1.0, cy))
+                w = max(0.0, min(1.0, w))
+                h = max(0.0, min(1.0, h))
+                
+                parts = [f"{class_id}", f"{cx:.6f}", f"{cy:.6f}", f"{w:.6f}", f"{h:.6f}"]
+                for kp in s.get("keypoints", []):
+                    kx = kp[0] / image_width
+                    ky = kp[1] / image_height
+                    kx = max(0.0, min(1.0, kx))
+                    ky = max(0.0, min(1.0, ky))
+                    vis = kp[2]
+                    parts.extend([f"{kx:.6f}", f"{ky:.6f}", f"{vis}"])
+                lines.append(" ".join(parts))
 
             elif s["type"] == "obb":
                 flat_pts = []
@@ -134,10 +178,20 @@ class Exporter:
         ET.SubElement(size, "depth").text = "3"
 
         for s in shapes:
-            min_x = min(p[0] for p in s["points"])
-            max_x = max(p[0] for p in s["points"])
-            min_y = min(p[1] for p in s["points"])
-            max_y = max(p[1] for p in s["points"])
+            if s["type"] == "pose" or s["type"] == "obb":
+                rect = s.get("rect", [0, 0, 0, 0])
+                cx, cy, w, h = rect
+                min_x = cx - w / 2
+                max_x = cx + w / 2
+                min_y = cy - h / 2
+                max_y = cy + h / 2
+            elif s["points"]:
+                min_x = min(p[0] for p in s["points"])
+                max_x = max(p[0] for p in s["points"])
+                min_y = min(p[1] for p in s["points"])
+                max_y = max(p[1] for p in s["points"])
+            else:
+                continue
 
             obj = ET.SubElement(root, "object")
             ET.SubElement(obj, "name").text = s["label"]

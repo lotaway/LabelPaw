@@ -57,6 +57,8 @@ class DatasetWorker(QThread):
                 self.process_yolo_split()
             elif self.mode == "TO_YOLO":
                 self.process_convert_to_yolo()
+            elif self.mode == "YOLO_TO_UNET":
+                self.process_yolo_to_unet()
 
         except Exception as e:
             self.log(f"❌ 错误: {str(e)}")
@@ -87,12 +89,24 @@ class DatasetWorker(QThread):
     def split_data(self, valid_pairs):
         random.shuffle(valid_pairs)
         total = len(valid_pairs)
+        
         train_c = int(total * self.train_r)
         val_c = int(total * self.val_r)
+        test_c = int(total * self.test_r)
+
+        # 把因为 int 取整产生的余数，分配给比例最大的那个集合
+        remainder = total - (train_c + val_c + test_c)
+        if remainder > 0:
+            if self.train_r >= max(self.val_r, self.test_r):
+                train_c += remainder
+            elif self.val_r >= max(self.train_r, self.test_r):
+                val_c += remainder
+            else:
+                test_c += remainder
 
         train_p = valid_pairs[:train_c]
         val_p = valid_pairs[train_c:train_c + val_c]
-        test_p = valid_pairs[train_c + val_c:]
+        test_p = valid_pairs[train_c + val_c:train_c + val_c + test_c]
         return train_p, val_p, test_p
 
     # ------------------  转 U-Net ------------------
@@ -113,6 +127,14 @@ class DatasetWorker(QThread):
         for c in sorted(list(unique_classes)):
             class_mapping[c] = len(class_mapping)
         self.log(f"🏷️ 类别映射: {class_mapping}")
+
+        # 调色板模式: 背景(0)是黑色，其它类别随机颜色
+        palette = [0, 0, 0]
+        for i in range(1, 256):
+            if i < len(class_mapping):
+                palette.extend([random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)])
+            else:
+                palette.extend([0, 0, 0])
 
         train_p, val_p, test_p = self.split_data(valid_pairs)
 
@@ -140,15 +162,20 @@ class DatasetWorker(QThread):
                     elif shape.get('shape_type') == 'point':
                         cv2.circle(mask, pts[0], 5, cid, -1)
 
-                cv2.imencode('.png', mask)[1].tofile(
-                    os.path.join(self.out_dir, 'masks', split_name, f"{base_name}.png"))
+                from PIL import Image
+                pil_mask = Image.fromarray(mask, mode='P')
+                pil_mask.putpalette(palette)
+                mask_save_path = os.path.join(self.out_dir, 'masks', split_name, f"{base_name}.png")
+                pil_mask.save(mask_save_path)
 
         self.log("\n🎉 U-Net 格式数据集生成完毕！")
         self.finish_signal.emit(True, "U-Net 数据集处理成功")
 
     # ------------------ 生成 data.yaml ------------------
     def generate_yaml(self, class_map):
-        yaml_path = os.path.join(self.out_dir, "data.yaml")
+        is_pose = getattr(self, 'is_pose_dataset', False)
+        filename = "data-pose.yaml" if is_pose else "data.yaml"
+        yaml_path = os.path.join(self.out_dir, filename)
         abs_out_dir = os.path.abspath(self.out_dir).replace("\\", "/")
 
         train_path = f"{abs_out_dir}/images/train"
@@ -171,6 +198,20 @@ class DatasetWorker(QThread):
         yaml_content.append(f"names:")
         for i in range(nc):
             yaml_content.append(f"  {i}: {names_dict[i]}")
+
+        if is_pose:
+            yaml_content.append(f"\n# Keypoints")
+            kpt_shape = getattr(self, 'kpt_shape', [0, 3])
+            yaml_content.append(f"kpt_shape: {kpt_shape}")
+            
+            # Determine flip_idx
+            flip_idx = list(range(kpt_shape[0]))
+            for name in class_map.keys():
+                if "person" in name.lower() or "person (coco)" in name.lower():
+                    if kpt_shape[0] == 17:
+                        flip_idx = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
+                    break
+            yaml_content.append(f"flip_idx: {flip_idx}")
 
         with open(yaml_path, 'w', encoding='utf-8') as f:
             f.write("\n".join(yaml_content))
@@ -231,6 +272,9 @@ class DatasetWorker(QThread):
             class_map[c] = len(class_map)
         self.log(f"🏷️ 类别映射: {class_map}")
 
+        self.is_pose_dataset = False
+        self.kpt_shape = [0, 3]
+
         train_p, val_p, test_p = self.split_data(valid_pairs)
         for split_name, pairs in [('train', train_p), ('val', val_p), ('test', test_p)]:
             if not pairs: continue
@@ -255,9 +299,9 @@ class DatasetWorker(QThread):
                     with open(label_p, 'r', encoding='utf-8') as f:
                         for s in json.load(f).get('shapes', []):
                             cid = class_map.get(s.get('label'))
-                            if cid is None or not s.get('points'): continue
-
-                            pts = s['points']
+                            if cid is None: continue
+                            
+                            pts = s.get('points', [])
                             shape_type = s.get('shape_type', 'polygon')
 
                             # 常规矩形 (HBB)
@@ -267,7 +311,7 @@ class DatasetWorker(QThread):
                                 lines.append(f"{cid} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}")
 
                             #  旋转框 (OBB)
-                            elif shape_type == 'obb':
+                            elif shape_type == 'obb' and pts:
                                 obb_pts = pts[:4]
                                 pts_normalized = []
                                 for pt in obb_pts:
@@ -275,11 +319,28 @@ class DatasetWorker(QThread):
                                 lines.append(f"{cid} " + " ".join(pts_normalized))
 
                             # 多边形实例分割 (Polygon)
-                            elif shape_type == 'polygon':
+                            elif shape_type == 'polygon' and pts:
                                 pts_normalized = []
                                 for pt in pts:
                                     pts_normalized.extend([f"{pt[0] / w:.6f}", f"{pt[1] / h:.6f}"])
                                 lines.append(f"{cid} " + " ".join(pts_normalized))
+
+                            # 关键点骨架 (Pose)
+                            elif shape_type == 'pose':
+                                rect = s.get('rect')
+                                kps = s.get('keypoints', [])
+                                if not rect or not kps: continue
+                                self.is_pose_dataset = True
+                                self.kpt_shape = [len(kps), 3]
+                                cx, cy, bw, bh = rect
+                                cx, cy = cx / w, cy / h
+                                bw, bh = bw / w, bh / h
+                                
+                                kps_normalized = []
+                                for kp in kps:
+                                    kx, ky, vis = kp
+                                    kps_normalized.extend([f"{kx/w:.6f}", f"{ky/h:.6f}", f"{vis}"])
+                                lines.append(f"{cid} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f} " + " ".join(kps_normalized))
 
                             # 点标注 (Point) - 转换为中心微小框
                             elif shape_type == 'point' and len(pts) == 1:
@@ -289,7 +350,7 @@ class DatasetWorker(QThread):
                                 cy = max(ph / 2, min(1.0 - ph / 2, cy))
                                 lines.append(f"{cid} {cx:.6f} {cy:.6f} {pw:.6f} {ph:.6f}")
 
-                # ================= XML 格式解析 (补全) =================
+                # ================= XML 格式解析  =================
                 elif l_type == 'xml':
                     root = ET.parse(label_p).getroot()
                     for obj in root.findall('object'):
@@ -344,6 +405,95 @@ class DatasetWorker(QThread):
         self.finish_signal.emit(True, "格式转换与划分成功")
 
 
+    # ------------------ 模式四: YOLO 分割 转 U-Net ------------------
+    def process_yolo_to_unet(self):
+        valid_pairs = self.get_valid_pairs(('.jpg', '.png', '.bmp'), ('.txt',))
+        if not valid_pairs:
+            self.finish_signal.emit(False, "未找到成对的图片和TXT！")
+            return
+
+        self.log(f"✅ 找到 {len(valid_pairs)} 组有效数据。")
+        class_map = {}
+        classes_txt = os.path.join(self.ann_dir, "classes.txt")
+        if os.path.exists(classes_txt):
+            with open(classes_txt, 'r', encoding='utf-8') as f:
+                for i, line in enumerate(f):
+                    if line.strip(): class_map[i] = line.strip()
+        else:
+            # 扫描所有 txt 获取最大类别 ID
+            max_class_id = 0
+            for _, txt_p in valid_pairs:
+                with open(txt_p, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if parts:
+                            cid = int(parts[0])
+                            if cid > max_class_id:
+                                max_class_id = cid
+            for i in range(max_class_id + 1):
+                class_map[i] = f"class_{i}"
+
+        self.log(f"🏷️ 类别映射: {class_map}")
+
+        # 调色板模式: 背景(0)是黑色，其它类别随机颜色
+        palette = [0, 0, 0]
+        for i in range(1, 256):
+            if i <= len(class_map):
+                palette.extend([random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)])
+            else:
+                palette.extend([0, 0, 0])
+
+        train_p, val_p, test_p = self.split_data(valid_pairs)
+
+        for split_name, pairs in [('train', train_p), ('val', val_p), ('test', test_p)]:
+            if not pairs: continue
+            os.makedirs(os.path.join(self.out_dir, 'images', split_name), exist_ok=True)
+            os.makedirs(os.path.join(self.out_dir, 'masks', split_name), exist_ok=True)
+            self.log(f"📦 正在生成 {split_name} 集 ({len(pairs)} 张)...")
+
+            for img_p, txt_p in pairs:
+                base_name = os.path.splitext(os.path.basename(img_p))[0]
+                
+                # 读取图片获取宽高
+                img_data = np.fromfile(img_p, dtype=np.uint8)
+                img = cv2.imdecode(img_data, cv2.IMREAD_COLOR)
+                if img is None: continue
+                h, w = img.shape[:2]
+
+                shutil.copy(img_p, os.path.join(self.out_dir, 'images', split_name, os.path.basename(img_p)))
+
+                mask = np.zeros((h, w), dtype=np.uint8)
+                
+                with open(txt_p, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if len(parts) >= 5:
+                            cid = int(parts[0])
+                            unet_cid = cid + 1  # 类别+1，0留给背景
+                            
+                            if len(parts) == 5:  # bbox: class_id cx cy bw bh
+                                cx, cy, bw, bh = map(float, parts[1:])
+                                xmin = int((cx - bw / 2) * w)
+                                ymin = int((cy - bh / 2) * h)
+                                xmax = int((cx + bw / 2) * w)
+                                ymax = int((cy + bh / 2) * h)
+                                cv2.rectangle(mask, (xmin, ymin), (xmax, ymax), unet_cid, -1)
+                            else:  # segmentation polygon
+                                pts_normalized = np.array(parts[1:], dtype=np.float32).reshape(-1, 2)
+                                pts_pixel = pts_normalized * np.array([w, h])
+                                pts_pixel = pts_pixel.astype(np.int32)
+                                cv2.fillPoly(mask, [pts_pixel], unet_cid)
+
+                from PIL import Image
+                pil_mask = Image.fromarray(mask, mode='P')
+                pil_mask.putpalette(palette)
+                mask_save_path = os.path.join(self.out_dir, 'masks', split_name, f"{base_name}.png")
+                pil_mask.save(mask_save_path)
+
+        self.log("\n🎉 YOLO 分割转 U-Net 掩码生成完毕！")
+        self.finish_signal.emit(True, "YOLO 分割转 U-Net 处理成功")
+
+
 class RatioDialog(QDialog):
     def __init__(self, current_ratios, parent=None):
         super().__init__(parent)
@@ -365,6 +515,8 @@ class RatioDialog(QDialog):
                 background-color: #f5f7fa;
                 border-left: 1px solid #dcdfe6;
             }
+            QSpinBox::up-button { image: url(ui/icon/caret-up.svg); padding: 2px; }
+            QSpinBox::down-button { image: url(ui/icon/caret-down.svg); padding: 2px; }
             QSpinBox::up-button:hover, QSpinBox::down-button:hover { background-color: #e9e9eb; }
             
             QPushButton {
@@ -425,7 +577,7 @@ class RatioDialog(QDialog):
 class DatasetToolWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LuoHuaLabel - 数据集处理系统")
+        self.setWindowTitle("LabelPaw - 数据集处理系统")
         self.resize(850, 650)
 
         # 整体应用偏灰色的背景，凸显内部白色卡片
@@ -566,6 +718,7 @@ class DatasetToolWindow(QMainWindow):
             "模式一: 纯划分 YOLO (TXT) 打乱划分",
             "模式二: 转换 JSON/XML -> YOLO格式并划分",
             "模式三: 转换 JSON -> U-Net (Mask掩码)",
+            "模式四: 转换 YOLO 分割 -> U-Net (Mask掩码)",
         ])
         self.mode_combo.setMinimumWidth(300)
         opt_layout.addWidget(self.mode_combo)
@@ -647,7 +800,7 @@ class DatasetToolWindow(QMainWindow):
             return
 
         mode_idx = self.mode_combo.currentIndex()
-        mode_map = {0: "YOLO_SPLIT", 1: "TO_YOLO", 2: "UNET"}
+        mode_map = {0: "YOLO_SPLIT", 1: "TO_YOLO", 2: "UNET", 3: "YOLO_TO_UNET"}
 
         self.console.clear()
         self.start_btn.setEnabled(False)

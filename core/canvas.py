@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsRectItem
 from PySide6.QtGui import QPixmap, QPolygonF, QPen, QColor, QBrush
 from PySide6.QtCore import Qt, QPointF, Signal, QRectF
-from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, HandleItem
+from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, HandleItem, PoseShape
 
 
 class CanvasMode:
@@ -14,7 +14,7 @@ class CanvasMode:
 
     @staticmethod
     def get_mode_name(mode):
-        names = {1: "矩形", 2: "多边形", 3: "点", 4: "旋转框"}
+        names = {1: "矩形", 2: "多边形", 3: "关键点", 4: "旋转框"}
         return names.get(mode, "未知")
 
 
@@ -30,6 +30,8 @@ class Canvas(QGraphicsScene):
         self.img_item = None
         self.sam_client = None
         self.sam_enabled = False
+        
+        self.current_pose_template = None
 
         self.drawing = False
         self.start_pt = None
@@ -63,8 +65,9 @@ class Canvas(QGraphicsScene):
         self.v_line.show()
 
     def clear_shapes(self):
+        # Clear all shape items from the canvas
         for item in self.items():
-            if isinstance(item, (RectShape, PolyShape, PointShape, RotatedRectShape)):
+            if isinstance(item, (RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape)):
                 self.removeItem(item)
 
     def set_mode(self, mode):
@@ -103,6 +106,40 @@ class Canvas(QGraphicsScene):
         self.update_crosshair(pt)
         super().mouseMoveEvent(event)
         clamped_pt = self.clamp_point(pt)
+
+        # 预览骨架模板 (跟随鼠标)
+        if self.mode == CanvasMode.POINT and self.current_pose_template:
+            # 1. State Constraint: Hide preview if ANY item is selected (Edit Mode)
+            has_selection = len(self.selectedItems()) > 0
+            
+            if has_selection:
+                if hasattr(self, 'pose_preview_item') and self.pose_preview_item:
+                    self.pose_preview_item.hide()
+            else:
+                # 检查鼠标下方是否有其他标注对象 (排除图片和线条)
+                items_under_mouse = self.items(pt)
+                hovering_on_shape = False
+                for item in items_under_mouse:
+                    from core.shapes import BaseShape, HandleItem, KeypointHandle
+                    if isinstance(item, (BaseShape, HandleItem, KeypointHandle)) and not getattr(item, 'is_temp', False):
+                        hovering_on_shape = True
+                        break
+                
+                if hovering_on_shape:
+                    if hasattr(self, 'pose_preview_item') and self.pose_preview_item:
+                        self.pose_preview_item.hide()
+                else:
+                    if not hasattr(self, 'pose_preview_item') or not self.pose_preview_item:
+                        from core.shapes import PoseShape
+                        # Create a preview shape centered at 0,0 with default size
+                        rect = QRectF(-50, -75, 100, 150)
+                        self.pose_preview_item = PoseShape(rect, self.current_pose_template, is_temp=True)
+                        self.pose_preview_item.setAcceptedMouseButtons(Qt.NoButton)
+                        self.addItem(self.pose_preview_item)
+                        self.pose_preview_item.setOpacity(0.6)
+                    
+                    self.pose_preview_item.show()
+                    self.pose_preview_item.setPos(clamped_pt)
 
         # ---------------- SAM 智能辅助悬停 ----------------
         # 将 RBOX 加入 SAM 支持的模式列表
@@ -190,10 +227,12 @@ class Canvas(QGraphicsScene):
     def mousePressEvent(self, event):
         pt = event.scenePos()
         clamped_pt = self.clamp_point(pt)
+        
+        is_yolo = getattr(self.sam_client, 'current_model_key', '').startswith('yolo')
 
         # ---------------- SAM 确认生成 ----------------
-        # 支持 RBOX
-        if self.sam_enabled and event.button() == Qt.LeftButton and self.mode in [CanvasMode.RECT, CanvasMode.POLY,
+        # 支持 RBOX, 但仅限 SAM 模型
+        if self.sam_enabled and not is_yolo and event.button() == Qt.LeftButton and self.mode in [CanvasMode.RECT, CanvasMode.POLY,
                                                                                   CanvasMode.RBOX]:
             if self.is_inside_image(pt) and self.sam_client:
                 self.sam_client.request_inference(clamped_pt.x(), clamped_pt.y(), is_click=True)
@@ -202,29 +241,57 @@ class Canvas(QGraphicsScene):
         items = self.items(clamped_pt)
         clicked_item = None
         for item in items:
-            if isinstance(item, HandleItem) and item.isVisible():
+            from core.shapes import HandleItem, OBBHandle, KeypointHandle, BaseShape
+            if isinstance(item, (HandleItem, OBBHandle, KeypointHandle)) and item.isVisible():
                 if not getattr(item.parentItem(), 'is_temp', False):
                     clicked_item = item
                     break
         if not clicked_item:
             for item in items:
-                if isinstance(item, (PolyShape, RectShape, PointShape, RotatedRectShape)):
+                from core.shapes import BaseShape
+                if isinstance(item, BaseShape):
                     if not getattr(item, 'is_temp', False):
                         clicked_item = item
                         break
+                elif item.parentItem() and isinstance(item.parentItem(), BaseShape):
+                    if not getattr(item.parentItem(), 'is_temp', False):
+                        clicked_item = item.parentItem()
+                        break
 
-        if clicked_item and not self.sam_enabled:
+        # 允许在关闭 SAM 或是使用 YOLO 的情况下编辑，或者点击到了手柄也允许编辑
+        from core.shapes import HandleItem, OBBHandle, KeypointHandle, PoseShape
+        is_handle = isinstance(clicked_item, (HandleItem, OBBHandle, KeypointHandle))
+        is_pose = isinstance(clicked_item, PoseShape)
+        if clicked_item and (not self.sam_enabled or is_yolo or is_handle or is_pose):
+            # First, let the item handle the event (e.g. for dragging)
+            # This is crucial so that QGraphicsScene can set it as the mouse grabber
             super().mousePressEvent(event)
+            
+            # Then handle our custom selection logic
             if event.button() == Qt.LeftButton:
                 if not (event.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)):
+                    # Deselect all other items
                     for item in self.selectedItems():
                         if item != clicked_item and item != clicked_item.parentItem():
                             item.setSelected(False)
-                    if isinstance(clicked_item, HandleItem):
-                        clicked_item.parentItem().setSelected(True)
+                    
+                    # Select the clicked item (or its parent if it's a handle)
+                    if isinstance(clicked_item, (HandleItem, OBBHandle, KeypointHandle)):
+                        parent = clicked_item.parentItem()
+                        if parent:
+                            parent.setSelected(True)
                     else:
                         clicked_item.setSelected(True)
             return
+            
+        # 如果点击了空白处，取消所有选中状态 (退出编辑模式)
+        if event.button() == Qt.LeftButton and not clicked_item:
+            has_selection = len(self.selectedItems()) > 0
+            if has_selection:
+                for item in self.selectedItems():
+                    item.setSelected(False)
+                # 如果是点击空白处退出编辑模式，我们不应该继续向下执行绘制新图形的逻辑
+                return
 
         # ---------------- 常规绘图起点 ----------------
         if not self.is_inside_image(pt) and not self.drawing: return
@@ -232,6 +299,28 @@ class Canvas(QGraphicsScene):
             if self.mode in [CanvasMode.RECT, CanvasMode.RBOX]:
                 self.drawing = True
                 self.start_pt = clamped_pt
+            elif self.mode == CanvasMode.POINT:
+                if self.current_pose_template:
+                    # 单击放置骨架模板
+                    from core.shapes import PoseShape
+                    rect = QRectF(-50, -75, 100, 150) # 默认大小缩小一半
+                    shape = PoseShape(rect, self.current_pose_template)
+                    shape.setPos(clamped_pt)
+                    shape.is_temp = False
+                    
+                    # 默认创建后不选中（不进入编辑模式）
+                    shape.setSelected(False)
+                    shape._update_handle_visibility()
+                    
+                    self.shape_drawn.emit(shape)
+                    
+                    # 隐藏预览
+                    if hasattr(self, 'pose_preview_item') and self.pose_preview_item:
+                        self.removeItem(self.pose_preview_item)
+                        self.pose_preview_item = None
+                else:
+                    shape = PointShape(clamped_pt)
+                    self.shape_drawn.emit(shape)
             elif self.mode == CanvasMode.POLY:
                 if len(self.poly_pts) > 2:
                     dist = ((clamped_pt.x() - self.poly_pts[0].x()) ** 2 + (
@@ -242,8 +331,7 @@ class Canvas(QGraphicsScene):
                 self.poly_pts.append(clamped_pt)
                 self.update_temp_poly()
             elif self.mode == CanvasMode.POINT:
-                shape = PointShape(clamped_pt)
-                self.shape_drawn.emit(shape)
+                pass # Already handled above
         elif event.button() == Qt.RightButton:
             if self.mode == CanvasMode.POLY and len(self.poly_pts) > 2:
                 self.finish_poly_shape()
@@ -264,7 +352,6 @@ class Canvas(QGraphicsScene):
                 if rect.width() > 5 and rect.height() > 5:
                     if self.mode == CanvasMode.RECT:
                         self.shape_drawn.emit(RectShape(rect))
-
                     # 手动松开鼠标完成绘制时，实例化新的 RotatedRectShape
                     elif self.mode == CanvasMode.RBOX:
                         cx, cy = rect.center().x(), rect.center().y()
@@ -278,12 +365,22 @@ class Canvas(QGraphicsScene):
         if not self.is_inside_image(pt): return
 
         for item in self.items(pt):
-            if isinstance(item, (HandleItem, PolyShape, RectShape, PointShape, RotatedRectShape)) and not getattr(item,
-                                                                                                                  'is_temp',
-                                                                                                                  False):
-                shape_item = item.parentItem() if isinstance(item, HandleItem) else item
-                self.shape_double_clicked.emit(shape_item)
+            from core.shapes import BaseShape, HandleItem
+            if getattr(item, 'is_temp', False):
+                continue
+            if isinstance(item, BaseShape):
+                self.shape_double_clicked.emit(item)
                 return
+            elif isinstance(item, HandleItem):
+                parent = item.parentItem()
+                if parent and not getattr(parent, 'is_temp', False):
+                    self.shape_double_clicked.emit(parent)
+                    return
+            elif item.parentItem() and isinstance(item.parentItem(), BaseShape):
+                parent = item.parentItem()
+                if not getattr(parent, 'is_temp', False):
+                    self.shape_double_clicked.emit(parent)
+                    return
 
         if event.button() == Qt.LeftButton and self.mode == CanvasMode.POLY and not self.sam_enabled and len(
                 self.poly_pts) > 2:
@@ -321,6 +418,9 @@ class Canvas(QGraphicsScene):
         if self.sam_hover_item:
             self.removeItem(self.sam_hover_item)
             self.sam_hover_item = None
+        if hasattr(self, 'pose_preview_item') and self.pose_preview_item:
+            self.removeItem(self.pose_preview_item)
+            self.pose_preview_item = None
 
     def keyPressEvent(self, event):
         key = event.key()

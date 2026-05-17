@@ -81,10 +81,10 @@ def split_yolo_dataset(input_dir, output_dir, train_ratio=0.8, val_ratio=0.2, te
 
 if __name__ == '__main__':
     # 原始的包含了图片和 .txt 标注文件的文件夹
-    input_dir = r"E:\11-AI\标注工具\LuoHuaLabel\yolotest"
+    input_dir = r"E:\11-AI\标注工具\yolotest"
 
     # 划分后的 YOLO 数据集输出文件夹
-    output_dir = r"E:\11-AI\标注工具\LuoHuaLabel\dataset"
+    output_dir = r"E:\11-AI\标注工具\dataset"
 
     # 数据集划分比例,加起来等于1
     # 如果不需要测试集，可以设为: train_ratio=0.8, val_ratio=0.2, test_ratio=0
