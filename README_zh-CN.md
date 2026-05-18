@@ -14,10 +14,10 @@
 
 源码地址：[https://github.com/luohuabuxiema/LabelPaw](https://github.com/luohuabuxiema/LabelPaw)
 
-## 🆕 更新日志
+## 更新日志
 
 - 2026-05-15：新增人脸、手部、行人等关键点模板骨架，可自定义关键点模板与连线。
-- 2026-05-14：新增对 SAM2 的支持，并集成了 Ultralytics YOLO 用于姿态估计与关键点智能预标注。
+- 2026-05-14：新增 SAM2.1 模型，实现智能点选标注，并集成了 Ultralytics YOLO 模型，YOLO 模型可用于矩形、分割、关键点、obb智能标注。
 - 2026-05-13：完善了 JSON/XML/YOLO 格式互转、支持 JSON 转 U-Net 掩膜（Mask）、数据集一键随机划分。
 - 2026-05-10：系统新增对亮色（Light）和暗黑（Dark）主题模式的支持，提供更舒适的视觉体验。
 - 2026-04-12：基于 PySide6 构建的基础智能标注界面（首次发布）。
@@ -30,7 +30,7 @@
 
 系统基于 PySide6 构建，集成了 **SAM2**、**SAM3** 以及 **Ultralytics YOLO** 视觉模型，极大地提升了标注效率：
 - **智能点选与提示词分割**：开启 SAM 智能标注后，支持在多边形、矩形、OBB 等模式下进行目标快速提取。
-- **骨架与关键点标注**：全新的关键点模块，支持自定义人体、手部、面部等关键点模板，利用 YOLO 模型实现关键点的智能检测与自动连线。
+- **关键点骨架模板与智能标注**：全新的关键点模块，内置行人、手部、面部等关键点模板，可自定义关键点模板，实现快速标注，可选 YOLO 模型实现关键点的智能检测与自动连线。
 
 | 功能 | 界面演示 |
 | --- | --- |
@@ -46,10 +46,10 @@
 | 暗黑样式 | ![在这里插入图片描述](assets/img_15.png) |
 | 数据集处理工具 | ![在这里插入图片描述](assets/img_6.png) |
 
-## ✨ 核心功能特性
+## 🙊核心功能特性
 
-- **🚀 AI 智能辅助 (SAM2/SAM3 驱动)**：鼠标悬停预览、单点快速提取轮廓、输入文本提示词全图目标自动分割。
-- **🦴 关键点与骨架模板标注 (YOLO 驱动)**：支持关键点拖拽、连线，自动生成姿态数据，可自定义骨架模板。
+- **✨ AI 智能辅助 (SAM2/SAM3 驱动)**：鼠标悬停预览、单点快速提取轮廓、输入文本提示词全图目标自动分割。
+- **🦴 关键点骨架模板与智能 (YOLO 驱动)标注**：支持矩形、分割、obb、关键点智能标注，关键点内置行人（17个关键点）、人脸（68个关键点）、手部（21个关键点），关键点标注可自定义骨架模板。
 - **📐 全能标注模式**：矩形 (Rect)、多边形 (Poly)、点 (Point)、OBB 旋转框以及关键点 (Pose)。
 - **🔄 极致 OBB 交互**：旋转框控制手柄，360° 无极顺滑旋转与贴墙滑动检测。
 - **💾 多格式互转与导出**：原生保存 JSON、YOLO (.txt)、XML (Pascal VOC)，可一键生成 U-Net Mask。
@@ -61,38 +61,162 @@
 
 ### 1. 基础环境依赖
 
-推荐使用 **Python 3.10+**。首先安装 PyTorch 及其核心依赖：
+推荐使用 Python 3.10+。
 
-**PyTorch 安装指南（Windows/N卡）**
-1. 查看 CUDA 版本：`cmd` 中运行 `nvidia-smi`，确认右上角 `CUDA Version`。
-2. 推荐使用阿里云镜像安装（例如 CUDA 11.8）：
-   ```bash
-   pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 -f https://mirrors.aliyun.com/pytorch-wheels/cu118
-   ```
-3. 验证安装：在 Python 中运行 `import torch; print(torch.cuda.is_available())`，输出 `True` 即为成功。
+创建虚拟环境，命令如下：
 
-接着，安装其他基础环境：
-```bash
-pip install -r requirements.txt
+```python
+conda create -n py311 python==3.11.5
+```
+进入刚刚创建的虚拟环境，命令如下：
+
+```python
+conda activate py311 
 ```
 
-### 2. 源码依赖下载与安装
+
+首先安装必要的 Python 依赖包：
+
+单独安装 torch>=2.5.0，pytorch 官网地址： [https://pytorch.org/](https://pytorch.org/get-started/previous-versions/?_gl=1*r08hqw*_up*MQ..*_ga*MTg1ODQzMTE5LjE3NzU4ODk5NDI.*_ga_469Y0W5V62*czE3NzU4ODk5NDEkbzEkZzAkdDE3NzU4ODk5NDEkajYwJGwwJGgw/)
+![在这里插入图片描述](assets/d5d10831b3184dfb83fba9ea8166bb7b.png)
+
+**💡 PyTorch 安装注意事项（新手必看）**
+
+在进行安装 PyTorch 之前，请大家务必核对以下几点，避免安装后运行报错：
+
+**1. 确认显卡支持与 CUDA 版本（极其重要）**
+* **适用系统**：本教程基于 Windows 环境。
+* **如何查看**：按下 `Win + R` 键，输入 `cmd` 打开命令提示符，输入 `nvidia-smi` 并回车。在弹出的表格右上角，找到 **CUDA Version**。
+![在这里插入图片描述](assets/984f810aeee94916a5ef87ba8739d4d9.png)
+
+* **版本匹配要求**：你下载的 PyTorch CUDA 版本（例如命令中的 `cu118` 或 `cu116`），**必须小于或等于**你电脑刚刚查到的 CUDA Version。如果你的电脑没有独立 N 卡，或者查不到该信息，请到官网选择 **CPU 版本**的安装命令。
+
+
+**2. Conda 与 Pip 命令二选一即可**
+
+
+根据自己电脑安装指定版本，安装命令如下，如果你使用 `conda` 命令卡住，可以尝试先在终端配置好国内的清华/中科大 conda 镜像源，然后再删掉命令后面的 `-c pytorch -c nvidia`（因为带上 `-c` 会强制去国外官方频道下载）：
+
+
+```bash
+conda install pytorch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0  pytorch-cuda=11.8 -c pytorch -c nvidia
+```
+
+上面的命令，大多数情况下是安装失败的，所以这里推荐使用阿里云镜像源安装，阿里云上镜像，pytorch gpu版的 whl 包可以在此链接查看：链接: [https://mirrors.aliyun.com/pytorch-wheels](https://mirrors.aliyun.com/pytorch-wheels/)
+
+后面 cu 版本需要对应cuda 的版本号，例如安装 cuda11.8 就写  cu118
+
+```bash
+-f  https://mirrors.aliyun.com/pytorch-wheels/cu118
+```
+cuda11.8 安装命令：
+```bash
+pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 -f  https://mirrors.aliyun.com/pytorch-wheels/cu118
+```
+cuda12.1 安装命令：
+
+```bash
+pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 -f  https://mirrors.aliyun.com/pytorch-wheels/cu121
+```
+
+**3. 验证是否安装成功**
+安装进度条跑完后，不要急着关掉窗口！在终端里输入 `python` ，输入以下代码：
+```python
+import torch
+print(torch.__version__)
+print(torch.cuda.is_available())
+print(torch.cuda.device_count())
+print(f"CUDA：{torch.version.cuda}")
+```
+如果输出了 `True`，恭喜你，cuda 可用！如果输出 `False`，说明装成了 CPU 版本或者 CUDA 不匹配，可能需要卸载重装。
+
+---
+
+
+之后在自己的虚拟环境下，使用下面命令安装所需的库
+
+```
+pip install -r requirements.txt
+```
+```python
+pyside6~=6.4.2
+numpy~=1.24.4
+opencv-python~=4.11.0.86
+pillow~=10.4.0
+einops~=0.8.2
+pycocotools~=2.0.11
+scipy~=1.15.3
+tqdm~=4.67.1
+iopath~=0.1.10
+matplotlib~=3.10.8
+timm~=1.0.26
+ftfy~=6.3.1
+psutil~=7.2.1
+torchmetrics~=1.5.0
+omegaconf~=2.3.0
+numba~=0.64.0
+huggingface-hub~=0.36.2
+pandas~=2.3.3
+scikit-learn~=1.8.0
+setuptools==79.0.1
+git+https://github.com/facebookresearch/sam3.git
+git+https://github.com/facebookresearch/sam2.git
+ultralytics==8.4.49
+```
+
+>注：如果需要使用智能辅助功能，请确保你的环境中已经正确配置了 `sam3`、 `sam2`、`ultralytics`相关的库及其依赖，如果上面的sam3、sam2、ultralytics 库安装失败，下文也有源码方式安装教程。
+
+#### 安装过程我遇到的错误
+
+（1）创建虚拟环境时候创建不了，报错如下：
+![在这里插入图片描述](assets/eab21eb3721f45cf87d161c782afc73f.png)
+
+解决方法：去 C:\Users\你的用户下，删除 .condarc 文件 
+
+（2）报错 ModuleNotFoundError: No module named ‘pkg_resources‘ 
+
+![在这里插入图片描述](assets/45b21e1d50fc4853978617234eec5d32.png)
+
+解决方法：降低 setuptools 库版本，我安装的版本是 79.0.1
+
+```python
+pip install setuptools==79.0.1
+```
+![在这里插入图片描述](assets/c673e9d646bc4e0989cfe40a432c2adf.png)
+
+参考链接： [https://blog.csdn.net/u014451778/article/details/158469881](https://blog.csdn.net/u014451778/article/details/158469881/)
+
+（3）报错 ModuleNotFoundError: No module named ‘triton‘ 
+![在这里插入图片描述](assets/d4b99849318740f0b1a40cfa857af640.png)
+
+解决方法：下载离线安装包，单独安装
+
+triton离线安装包下载地址：[https://hf-mirror.com/madbuda/triton-windows-builds](https://hf-mirror.com/madbuda/triton-windows-builds/)
+
+![在这里插入图片描述](assets/404ac26c33944f0f9bcfe727dbfd501c.png)
+
+参考链接：[https://blog.csdn.net/qq_42910179/article/details/155606159](https://blog.csdn.net/qq_42910179/article/details/155606159/)
+
+### 2.  sam3、sam2、Ultralytics 源码安装方式
 
 为了确保 SAM2、SAM3、Ultralytics（YOLO） 能够正常工作，你需要去官方仓库下载源码并放置在 `LabelPaw` 根目录下。因为官方库在不断更新，采用源码方式能最大程度保证兼容性。
 
 **官方源码地址**：
+
 - **SAM2**: [https://github.com/facebookresearch/sam2](https://github.com/facebookresearch/sam2)
 - **SAM3**: [https://github.com/facebookresearch/sam3](https://github.com/facebookresearch/sam3)
 - **Ultralytics (YOLO)**: [https://github.com/ultralytics/ultralytics](https://github.com/ultralytics/ultralytics)
 
 **操作步骤**：
+
 1. 访问上述 GitHub 地址，点击绿色的 **Code** 按钮，选择 **Download ZIP**。
 2. 解压下载的压缩包。
-3. **重要**：压缩包内往往包含文档、测试用例等很多文件。你只需要把解压后里面的**核心代码文件夹**（即对应名称的 `sam2`、`sam3`、`ultralytics` 文件夹，里面直接包含 `__init__.py` 等 Python 源码的那个目录）提取出来。
+3. **重要**：压缩包内往往包含文档、测试用例等很多文件。只需要把解压后里面的**核心代码文件夹**（下载完可以看到有对应名称的 `sam2`、`sam3`、`ultralytics` 文件夹）。
 4. 将这三个文件夹（`sam2`, `sam3`, `ultralytics`）直接粘贴到 `LabelPaw` 的根目录下。
 
 **通过命令行直接安装（可选，推荐进阶用户）**：
 如果你不想手动下载和复制文件夹，可以直接使用 pip 从 GitHub 源码或 PyPI 进行安装：
+
 ```bash
 # 安装 SAM2
 pip install git+https://github.com/facebookresearch/sam2.git
@@ -111,8 +235,6 @@ pip install ultralytics
 >    - 或者优先推荐使用上方的**官方源码下载解压**方式，这种方式最稳妥。
 
 ### 3. 模型下载与配置修改
-
-为了启用智能标注，你需要下载相应的权重文件 (`.pt`)。
 
 **模型下载与存放说明**：
 
@@ -136,9 +258,10 @@ pip install ultralytics
 ```
 
 **2. SAM 系列模型下载与存放**
+
 - **SAM 3 模型 (3.5 GB)**：前往官方 GitHub 仓库或 HuggingFace 搜索 `sam3` 获取。存放在 `\weights\sam_weights\sam3.pt`。
-- **SAM 2.1 模型 (推荐)**：
-  - SAM 2.1 Tiny (推荐，速度快): [https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt)
+- **SAM 2.1 模型**：
+  - SAM 2.1 Tiny : [https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt)
   - SAM 2.1 Small: [https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt)
   - SAM 2.1 Base: [https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt)
   - SAM 2.1 Large: [https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt)
@@ -148,12 +271,15 @@ pip install ultralytics
 - **YOLO 模型**：可前往 YOLO 官方 GitHub 或对应框架页面下载最新权重（如 yolov8、yolo11、yolo26 等）。姿态估计推荐下载带 `-pose` 后缀的模型（如 `yolo26n-pose.pt`）。
 - **存放位置**：存放在对应的文件夹内，如 `\weights\yolo26_weights\`。*(注：您也可以将自己训练好的 YOLO 模型放入对应文件夹中，软件可自动读取！)*
 
-**代码路径修改说明**：
-为了让系统找到你下载的模型，你**只需**修改代码中的一个基础路径变量：
-打开 `main.py`、`core/sam_client.py` 以及 `ui/model_selector_dialog.py`，找到里面的 `MODEL_BASE_DIR`（或 `model_base_dir`）变量，将其统一修改为您本地 `weights` 文件夹的绝对路径：
-```python
-MODEL_BASE_DIR = r"你的绝对路径\weights"
-```
+**模型路径修改说明**：
+为了让系统找到你下载的模型，
+
+>方法1：在项目根目录下新建一个 weights 文件夹，存放模型，模型存放结构看上文介绍
+
+>方法2：在其他地方新建一个 weights 文件夹，存放模型，模型存放结构看上文介绍，**只需**修改代码中的一个基础路径变量：
+打开 `main.py`、`core/sam_client.py` 以及 `ui/model_selector_dialog.py`，找到里面的 `HARDCODED_DEV_DIR`变量，将其统一修改为您本地 `weights` 文件夹的绝对路径： **HARDCODED_DEV_DIR= r"你的绝对路径\weights"**
+
+
 *(注：系统会自动扫描该目录下所有形如 `yolo*_weights` 的子文件夹并加载 YOLO 模型，因此你只需放好模型，无需再手动指定 YOLO 的子目录！)*
 
 **【特别说明：无显卡(GPU)用户的建议】**
@@ -170,15 +296,14 @@ python main.py
 
 ## 📖 用户操作指南
 
-### 基本工作流
+### 📋基本工作流
 
 1. **打开目录**：点击“打开目录”选择图片文件夹。
 2. **选择格式**：在左侧下拉菜单选择保存格式（JSON / YOLO / XML）。
-3. **开始标注**：选择左侧工具栏，或者使用快捷键。
-4. **智能标注**：开启左下角 **SAM 智能辅助**（快捷键 Q）。支持悬停预览点选，或者输入提示词回车。
-5. **关键点/骨架标注**：切换到关键点模式，在右侧面板选择骨架模板（如人脸、手部），可通过 YOLO 智能预推理，也可以手动添加点并连线。
+3. **标注模式**：选择左侧工具栏，可选矩形、关键点、obb、多边形标注模式，或者使用快捷键。
+4. **智能标注**：开启左下角 **SAM 智能辅助**（快捷键 Q）。sam3/sam2支持悬停预览点选，sam3模型支持输入提示词标注，可在顶部工具栏选择其他模型，也可以使用 YOLO 智能预推理进行标注。
+5. **关键点/骨架标注**：选择关键点标注模式后，可在顶部栏工具栏可选择内置的关键点骨架模板进行标注，关键点骨架模板目前内置人脸、手部、行人等骨架，也可通过 YOLO 智能预推理，也可以自定义关键点骨架模板。
 6. **数据集处理**：点击工具栏的“数据集转换”，可执行格式互转、U-Net Mask 生成、以及训练/验证集比例划分。
-7. **保存**：快捷键 `Ctrl + S`，或切换图片时自动保存。
 
 ### ⌨️ 快捷键大全
 
@@ -190,7 +315,7 @@ python main.py
 - **P**：多边形标注 (Poly)
 - **O**：旋转框标注 (OBB)
 - **T**：关键点标注 (Pose/Point)
-- **M**：触发模型智能预标注 (需开启智能辅助并加载对应模型)
+- **M**：使用 YOLO 模型进行推理 (需开启智能辅助并加载对应模型)
 - **E**：修改当前选中的标签类别
 - **Del / Backspace**：删除选中的标注框/点
 - **Ctrl + Z**：撤销 (支持 20 步)
@@ -218,7 +343,7 @@ python main.py
 
 ```bibtex
 @misc{LabelPaw,
-  year = {2025},
+  year = {2026},
   author = {luohuabuxiema},
   publisher = {Github},
   journal = {Github repository},
@@ -228,6 +353,7 @@ python main.py
 ```
 
 **致谢与参考模型引用**：
+
 ```bibtex
 @misc{carion2025sam3segmentconcepts,
       title={SAM 3: Segment Anything with Concepts},
@@ -246,9 +372,9 @@ python main.py
   year={2024}
 }
 
-@software{yolo_ultralytics,
+@software{ultralytics,
   author = {Glenn Jocher and Ayush Chaurasia and Jing Qiu},
-  title = {Ultralytics YOLO},
+  title = {Ultralytics},
   year = {2023},
   url = {https://github.com/ultralytics/ultralytics},
   license = {AGPL-3.0}
