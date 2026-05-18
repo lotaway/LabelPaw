@@ -68,6 +68,11 @@ class Canvas(QGraphicsScene):
         # Clear all shape items from the canvas
         for item in self.items():
             if isinstance(item, (RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape)):
+                if getattr(item, 'is_temp', False):
+                    if hasattr(self, 'pose_preview_item') and item == getattr(self, 'pose_preview_item', None):
+                        self.pose_preview_item = None
+                    if hasattr(self, 'sam_hover_item') and item == getattr(self, 'sam_hover_item', None):
+                        self.sam_hover_item = None
                 self.removeItem(item)
 
     def set_mode(self, mode):
