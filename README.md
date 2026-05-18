@@ -328,7 +328,7 @@ Developers are welcome to Fork and submit PRs!
 
 This project is licensed under the GPL-3.0 License. If you use this code in commercial or non-commercial projects, please comply with this license and open source your derivative modifications. Thank you for your support, and if this helps, please give the repository a Star!
 
-### Citation
+## Citation
 
 If you use this software in your research, please cite as follows:
 
