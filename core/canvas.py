@@ -148,7 +148,8 @@ class Canvas(QGraphicsScene):
 
         # ---------------- SAM 智能辅助悬停 ----------------
         # 将 RBOX 加入 SAM 支持的模式列表
-        if self.sam_enabled and self.is_inside_image(pt) and self.mode in [CanvasMode.RECT, CanvasMode.POLY,
+        is_sam_model = getattr(self.sam_client, 'current_model_key', '').startswith('sam')
+        if self.sam_enabled and is_sam_model and self.is_inside_image(pt) and self.mode in [CanvasMode.RECT, CanvasMode.POLY,
                                                                            CanvasMode.RBOX]:
             if self.sam_client:
                 self.sam_client.request_inference(clamped_pt.x(), clamped_pt.y(), is_click=False)
@@ -176,7 +177,7 @@ class Canvas(QGraphicsScene):
 
             self.addItem(self.temp_item)
 
-        elif self.mode == CanvasMode.POLY and not self.sam_enabled and len(self.poly_pts) > 0:
+        elif self.mode == CanvasMode.POLY and not (self.sam_enabled and is_sam_model) and len(self.poly_pts) > 0:
             self.update_temp_poly(mouse_pos=clamped_pt)
 
     def handle_sam_result(self, poly_pts, rect_xywh, rect_obb, score, is_click):
@@ -343,7 +344,8 @@ class Canvas(QGraphicsScene):
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
-        if self.sam_enabled: return
+        is_sam_model = getattr(self.sam_client, 'current_model_key', '').startswith('sam')
+        if self.sam_enabled and is_sam_model: return
 
         if event.button() == Qt.LeftButton and self.drawing:
             self.drawing = False
@@ -387,7 +389,8 @@ class Canvas(QGraphicsScene):
                     self.shape_double_clicked.emit(parent)
                     return
 
-        if event.button() == Qt.LeftButton and self.mode == CanvasMode.POLY and not self.sam_enabled and len(
+        is_sam_model = getattr(self.sam_client, 'current_model_key', '').startswith('sam')
+        if event.button() == Qt.LeftButton and self.mode == CanvasMode.POLY and not (self.sam_enabled and is_sam_model) and len(
                 self.poly_pts) > 2:
             self.finish_poly_shape()
         else:
@@ -436,7 +439,8 @@ class Canvas(QGraphicsScene):
                 self.removeItem(item)
             self.state_changed.emit()
         elif key == Qt.Key_Z and modifiers == Qt.ControlModifier:
-            if self.mode == CanvasMode.POLY and not self.sam_enabled and len(self.poly_pts) > 0:
+            is_sam_model = getattr(self.sam_client, 'current_model_key', '').startswith('sam')
+            if self.mode == CanvasMode.POLY and not (self.sam_enabled and is_sam_model) and len(self.poly_pts) > 0:
                 self.poly_pts.pop()
                 self.update_temp_poly()
         elif key == Qt.Key_Return or key == Qt.Key_Enter:
