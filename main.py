@@ -963,7 +963,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.formatWidget.set_yolo_enabled(True)
 
     def _update_help_text(self, mode):
-        is_sam = self.samSwitch.isChecked()
+        # 只有在智能模式开启，并且当前选择的是SAM模型时，才显示悬停预览提示
+        is_sam = self.samSwitch.isChecked() and getattr(self.sam_client, 'current_model_key', '').startswith('sam')
         if mode == CanvasMode.RECT:
             if is_sam:
                 self.helpLabel.setText("操作: 鼠标悬停实时预览外接矩形，左键点击直接确认生成矩形框")
@@ -1239,16 +1240,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.scene.removeItem(self.scene.pose_preview_item)
                 self.scene.pose_preview_item = None
 
-            if self.sam_client.model:
-                # self.helpLabel.setText("正在分析图片智能特征...")
-                # self.helpLabel.setStyleSheet("color: orange;")
-                QApplication.processEvents()
-                self.sam_client.set_image(path)
-                # self.helpLabel.setText("分析完成，可以开始智能标注")
-                # self.helpLabel.setStyleSheet("color: green;")
+            # 只有SAM模型才需要后台分析图片特征
+            is_sam = getattr(self.sam_client, 'current_model_key', '') and getattr(self.sam_client, 'current_model_key', '').startswith('sam')
+            if is_sam:
+                if self.sam_client.model:
+                    QApplication.processEvents()
+                    self.sam_client.set_image(path)
+                else:
+                    self.helpLabel.setText("等待后台加载模型，稍后将自动分析图片...")
+                    self.helpLabel.setStyleSheet("color: orange;")
             else:
-                self.helpLabel.setText("等待后台加载模型，稍后将自动分析图片...")
-                self.helpLabel.setStyleSheet("color: orange;")
+                # YOLO 或者没有模型时，恢复默认的标注提示词
+                self._update_help_text(self.scene.mode)
 
     def auto_save_annotation(self):
         if not self.current_image_path or not self.scene.img_item: return
