@@ -72,7 +72,6 @@ class BaseShape:
         self.label_text.setDefaultTextColor(QColor(255, 255, 255))
         self.label_text.setFont(QFont("Arial", 10, QFont.Bold))
         self.label_text.setZValue(1001)
-        self.label_text.hide()
 
     def update_label_position(self, item):
         if not hasattr(self, 'label_text') or not self.label_text:
@@ -90,10 +89,7 @@ class BaseShape:
 
     def update_label_visibility(self, item, is_selected=False, is_hovered=False):
         if hasattr(self, 'label_text') and self.label_text:
-            if is_selected or is_hovered:
-                self.label_text.show()
-            else:
-                self.label_text.hide()
+            self.label_text.show()
 
 
 class HandleItem(QGraphicsEllipseItem):
