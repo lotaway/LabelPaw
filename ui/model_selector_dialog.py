@@ -103,7 +103,7 @@ class ModelSelectorDialog(QDialog):
         
         # Search Box
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search models...")
+        self.search_input.setPlaceholderText("搜索模型...")
         self.search_input.setStyleSheet(f"""
             QLineEdit {{
                 border: none;

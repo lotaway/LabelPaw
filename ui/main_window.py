@@ -2,6 +2,7 @@ import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QToolBar, QListWidget, QGraphicsView,
                                QLabel, QLineEdit, QPushButton, QStatusBar, QMenu, QComboBox, QSizePolicy, QAbstractItemView)
+from ui.class_list_widget import ClassListWidget
 from PySide6.QtCore import Qt, Signal, QRect, QSize
 from PySide6.QtGui import QAction, QActionGroup, QPainter, QColor, QFont, QIcon, QPixmap
 
@@ -321,6 +322,22 @@ class CanvasView(QGraphicsView):
             return
         super().mouseReleaseEvent(event)
 
+    def leaveEvent(self, event):
+        """鼠标离开画布时隐藏十字虚线"""
+        scene = self.scene()
+        if scene and hasattr(scene, 'h_line'):
+            scene.h_line.hide()
+            scene.v_line.hide()
+        super().leaveEvent(event)
+
+    def enterEvent(self, event):
+        """鼠标进入画布时显示十字虚线"""
+        scene = self.scene()
+        if scene and hasattr(scene, 'h_line') and scene.img_item:
+            scene.h_line.show()
+            scene.v_line.show()
+        super().enterEvent(event)
+
 
 class Ui_MainWindow(object):
     def set_icon_color(self, icon, color):
@@ -555,7 +572,8 @@ class Ui_MainWindow(object):
         self.dockLayout.addLayout(rightTitleBar)
 
         self.labelClasses = QLabel("历史类别:")
-        self.listClasses = QListWidget()
+        self.classListWidget = ClassListWidget()
+        self.listClasses = self.classListWidget.listWidget  # 兼容旧引用
 
         self.labelFiles = QLabel("文件列表:")
         self.listFiles = QListWidget()
@@ -563,7 +581,7 @@ class Ui_MainWindow(object):
         self.listFiles.setContextMenuPolicy(Qt.CustomContextMenu)
 
         self.dockLayout.addWidget(self.labelClasses)
-        self.dockLayout.addWidget(self.listClasses, 2)  # 历史类别分配x份自适应空间
+        self.dockLayout.addWidget(self.classListWidget, 2)  # 历史类别分配x份自适应空间
         self.dockLayout.addWidget(self.labelFiles)
         self.dockLayout.addWidget(self.listFiles, 4)  # 文件列表分配x份自适应空间
 

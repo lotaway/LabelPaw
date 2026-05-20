@@ -67,6 +67,24 @@ class BaseShape:
             item.setBrush(self.normal_brush)
             item.setCursor(Qt.ArrowCursor)
 
+    def set_color(self, color):
+        """dynamically update shape color based on class color"""
+        self.normal_pen = QPen(color, 2)
+        self.normal_brush = QBrush(QColor(color.red(), color.green(), color.blue(), 50))
+        self.hover_brush = QBrush(QColor(color.red(), color.green(), color.blue(), 120))
+        self.setPen(self.normal_pen)
+        self.setBrush(self.normal_brush)
+        if hasattr(self, 'label_text') and self.label_text:
+            self.label_text.setDefaultTextColor(color)
+        for attr in ['lt_handle', 'rt_handle', 'lb_handle', 'rb_handle']:
+            h = getattr(self, attr, None)
+            if h:
+                h.setPen(QPen(color, 1.5))
+        if hasattr(self, 'handles'):
+            for h in self.handles:
+                if isinstance(h, HandleItem):
+                    h.setPen(QPen(color, 1.5))
+
     def setup_label(self, item):
         self.label_text = QGraphicsTextItem(item)
         self.label_text.setDefaultTextColor(QColor(255, 255, 255))
@@ -493,6 +511,11 @@ class PoseShape(QGraphicsObject, BaseShape):
         if is_temp:
             for h in self.handles:
                 h.hide()
+
+    def set_color(self, color):
+        """PoseShape uses QGraphicsObject, not QGraphicsRectItem, so override set_color"""
+        if hasattr(self, 'label_text') and self.label_text:
+            self.label_text.setDefaultTextColor(color)
 
     def update_geometry(self):
         w, h = self.box_w, self.box_h
@@ -978,6 +1001,16 @@ class PointShape(QGraphicsEllipseItem, BaseShape):
             self.update_label_text(label)
             self.update_label_position(self)
 
+    def set_color(self, color):
+        """dynamically update point color based on class color"""
+        self.normal_pen = QPen(color, 2)
+        self.normal_brush = QBrush(QColor(color.red(), color.green(), color.blue(), 150))
+        self.hover_brush = QBrush(QColor(color.red(), color.green(), color.blue(), 220))
+        self.setPen(self.normal_pen)
+        self.setBrush(self.normal_brush)
+        if hasattr(self, 'label_text') and self.label_text:
+            self.label_text.setDefaultTextColor(color)
+
     def hoverEnterEvent(self, event):
         self.setBrush(self.hover_brush)
         self.setCursor(Qt.PointingHandCursor)
@@ -1113,6 +1146,8 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
             self.rect_item.setPen(QPen(QColor(28, 126, 214), 2))
             self.rect_item.setBrush(QBrush(QColor(28, 126, 214, 50)))
 
+        self._base_color = QColor(28, 126, 214)
+
         self.rotate_line = QGraphicsLineItem(self)
         self.rotate_line.setPen(QPen(QColor(28, 126, 214), 1.5, Qt.DashLine))
 
@@ -1134,6 +1169,16 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
         if is_temp:
             for h in self.handles:
                 h.hide()
+
+    def set_color(self, color):
+        """dynamically update OBB color based on class color"""
+        self._base_color = color
+        if not self.is_temp:
+            self.rect_item.setPen(QPen(color, 2))
+            self.rect_item.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 50)))
+            self.rotate_line.setPen(QPen(color, 1.5, Qt.DashLine))
+        if hasattr(self, 'label_text') and self.label_text:
+            self.label_text.setDefaultTextColor(color)
 
     def boundingRect(self):
         r = self.box_h / 2 + 35
@@ -1211,13 +1256,15 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
 
     def hoverEnterEvent(self, event):
         self._hovered = True
-        self.rect_item.setBrush(QBrush(QColor(28, 126, 214, 120)))
+        c = self._base_color
+        self.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 120)))
         self._update_handle_visibility()
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
         self._hovered = False
-        self.rect_item.setBrush(QBrush(QColor(28, 126, 214, 50)))
+        c = self._base_color
+        self.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 50)))
         self._update_handle_visibility()
         super().hoverLeaveEvent(event)
 

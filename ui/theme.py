@@ -330,6 +330,51 @@ QLabel { color: #cbd5e1; background: transparent; }
     color: #22C55E;
     font-weight: bold;
 }
+
+/* Class List Widget */
+#classAddBtn {
+    background-color: #1E293B;
+    color: #22C55E;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0px;
+}
+#classAddBtn:hover {
+    background-color: #334155;
+    border-color: #22C55E;
+}
+#classSearchInput, #classAddInput {
+    background-color: #0F172A;
+    color: #F8FAFC;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 13px;
+}
+#classSearchInput:focus, #classAddInput:focus {
+    border: 1px solid #22C55E;
+}
+#classListWidget {
+    background-color: #0F172A;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 4px;
+    outline: 0;
+}
+#classListWidget::item {
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: #cbd5e1;
+    font-size: 13px;
+    min-height: 26px;
+}
+#classListWidget::item:hover { background-color: #1E293B; }
+#classListWidget::item:selected {
+    background-color: #1E293B;
+    color: #22C55E;
+}
 """
 
 LIGHT_THEME = """
@@ -661,5 +706,50 @@ QLabel { color: #334155; background: transparent; }
     background-color: #F1F5F9;
     color: #22C55E;
     font-weight: bold;
+}
+
+/* Class List Widget */
+#classAddBtn {
+    background-color: #F1F5F9;
+    color: #22C55E;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0px;
+}
+#classAddBtn:hover {
+    background-color: #E2E8F0;
+    border-color: #22C55E;
+}
+#classSearchInput, #classAddInput {
+    background-color: #FFFFFF;
+    color: #0F172A;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 13px;
+}
+#classSearchInput:focus, #classAddInput:focus {
+    border: 1px solid #22C55E;
+}
+#classListWidget {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 4px;
+    outline: 0;
+}
+#classListWidget::item {
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: #334155;
+    font-size: 13px;
+    min-height: 26px;
+}
+#classListWidget::item:hover { background-color: #F1F5F9; }
+#classListWidget::item:selected {
+    background-color: #F1F5F9;
+    color: #22C55E;
 }
 """

@@ -236,7 +236,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.scene.shape_double_clicked.connect(self.edit_shape_label)  # 双击修改
 
-        self.listClasses.itemChanged.connect(self.on_list_item_changed)
+        # 类别管理组件信号
+        self.classListWidget.class_added.connect(self._on_class_added_from_widget)
+        self.classListWidget.class_renamed.connect(self._on_class_renamed_from_widget)
+        self.classListWidget.color_changed.connect(self.on_class_color_changed)
+        self.classListWidget.item_changed.connect(self.on_list_item_changed)
 
     def on_predict_clicked(self):
         if not self.current_image_path:
@@ -422,15 +426,47 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.statusBar.showMessage("预测出错", 3000)
         self._update_help_text(self.scene.mode)
 
+    def _on_class_added_from_widget(self, cls_name):
+        """从 ClassListWidget 添加新类别的回调"""
+        if cls_name not in self.class_list:
+            self.class_list.append(cls_name)
+            self.save_classes()
+
+    def _on_class_renamed_from_widget(self, old_name, new_name):
+        """从 ClassListWidget 重命名类别的回调"""
+        if old_name in self.class_list:
+            idx = self.class_list.index(old_name)
+            self.class_list[idx] = new_name
+            # 遍历画板更新形状标签
+            changed = False
+            for shape in self.scene.items():
+                if isinstance(shape, (RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape)):
+                    if getattr(shape, 'label', '') == old_name:
+                        shape.label = new_name
+                        if hasattr(shape, 'update_label_text'):
+                            shape.update_label_text(new_name)
+                        changed = True
+            self.save_classes()
+            if changed:
+                self.auto_save_annotation()
+                self.push_state()
+            DialogOver(self, f"已将所有的 '{old_name}' 批量变更为 '{new_name}'", "修改成功", "success")
+
+    def on_class_color_changed(self, cls_name, color):
+        """类别颜色变更时，同步更新画布上所有该类别的形状颜色"""
+        from PySide6.QtGui import QColor as _QC
+        if not isinstance(color, _QC):
+            color = _QC(color)
+        for item in self.scene.items():
+            if isinstance(item, (RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape)):
+                if getattr(item, 'label', '') == cls_name and hasattr(item, 'set_color'):
+                    item.set_color(color)
+
     def add_class_to_list(self, cls_name):
         """列表项支持双击编辑"""
         if cls_name not in self.class_list:
             self.class_list.append(cls_name)
-            item = QListWidgetItem(cls_name)
-            # 开启双击编辑权限
-            item.setFlags(item.flags() | Qt.ItemIsEditable)
-            item.setData(Qt.UserRole, cls_name)
-            self.listClasses.addItem(item)
+            self.classListWidget.add_class(cls_name)
 
     def push_state(self):
         """把当前画布状态拍个快照，存进撤销堆栈"""
@@ -552,6 +588,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     shape.update_label_text(label)
                 if hasattr(shape, 'update_label_position'):
                     shape.update_label_position(shape)
+                # 应用类别颜色
+                if hasattr(shape, 'set_color'):
+                    shape.set_color(self.classListWidget.get_class_color(label))
                 
                 # 尝试恢复选中状态 (保持编辑模式)
                 is_selected = False
@@ -982,22 +1021,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def load_classes(self, dir_path):
         self.class_list.clear()
-        self.listClasses.clear()
-        class_file = os.path.join(dir_path, "classes.txt")
-        if os.path.exists(class_file):
-            with open(class_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    cls_name = line.strip()
-                    if cls_name:
-                        self.add_class_to_list(cls_name)
-                        # self.class_list.append(cls_name)
-                        # self.listClasses.addItem(cls_name)
+        self.classListWidget.load_classes(dir_path)
+        self.class_list = self.classListWidget.get_class_list()
 
     def save_classes(self):
         if self.current_dir:
-            class_file = os.path.join(self.current_dir, "classes.txt")
-            with open(class_file, "w", encoding="utf-8") as f:
-                f.write("\n".join(self.class_list))
+            self.classListWidget.set_working_dir(self.current_dir)
+            self.classListWidget._class_list = list(self.class_list)
+            self.classListWidget.save_classes()
+
+    def apply_class_colors_to_scene(self):
+        """加载标注后，根据类别颜色映射为所有形状设置颜色"""
+        for item in self.scene.items():
+            if isinstance(item, (RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape)):
+                label = getattr(item, 'label', '')
+                if label and hasattr(item, 'set_color'):
+                    color = self.classListWidget.get_class_color(label)
+                    item.set_color(color)
 
     def handle_new_shape(self, shape):
         self.scene.addItem(shape)
@@ -1030,6 +1070,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 shape.update_label_position(shape)
             if hasattr(shape, 'update_label_visibility'):
                 shape.update_label_visibility(shape, is_selected=True, is_hovered=False)
+            # 应用类别颜色
+            if hasattr(shape, 'set_color'):
+                shape.set_color(self.classListWidget.get_class_color(cls_name))
             for item in self.scene.selectedItems():
                 item.setSelected(False)
             shape.setSelected(True)
@@ -1057,57 +1100,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             shape.label = cls_name
             if hasattr(shape, 'update_label_text'):
                 shape.update_label_text(cls_name)
+            # 应用类别颜色
+            if hasattr(shape, 'set_color'):
+                shape.set_color(self.classListWidget.get_class_color(cls_name))
 
             # 修改完自动保存一次
             self.auto_save_annotation()
             self.push_state()
 
     def on_list_item_changed(self, item):
-        """处理右侧列表双击修改类别名的全局涟漪效应"""
-        new_name = item.text().strip()
-        old_name = item.data(Qt.UserRole)
-
-        # 如果没有真正改动，直接跳过
-        if not old_name or new_name == old_name:
-            return
-
-        self.listClasses.blockSignals(True)
-        try:
-            if not new_name:
-                DialogOver(self, "类别名不能为空！", "名称错误", "warning")
-                item.setText(old_name)
-                return
-
-            if new_name in self.class_list:
-                DialogOver(self, f"类别名 '{new_name}' 已存在！", "名称冲突", "warning")
-                item.setText(old_name)
-                return
-
-            # 替换内部字典
-            idx = self.class_list.index(old_name)
-            self.class_list[idx] = new_name
-            item.setData(Qt.UserRole, new_name)  # 把新名字设为基准
-
-            # 遍历画板，把所有旧名字的框换成新名字
-            changed = False
-            for shape in self.scene.items():
-                if isinstance(shape, (RectShape, PolyShape, PointShape, RotatedRectShape)):
-                    if getattr(shape, 'label', '') == old_name:
-                        shape.label = new_name
-                        if hasattr(shape, 'update_label_text'):
-                            shape.update_label_text(new_name)
-                        changed = True
-
-            # 保存并推入时光机
-            self.save_classes()
-            if changed:
-                self.auto_save_annotation()
-                self.push_state()
-
-            DialogOver(self, f"已将所有的 '{old_name}' 批量变更为 '{new_name}'", "修改成功", "success")
-
-        finally:
-            self.listClasses.blockSignals(False)
+        """ClassListWidget item_changed fallback (rename already handled by class_renamed signal)"""
+        pass
 
     def open_dir(self):
         dir_path = QFileDialog.getExistingDirectory(self, "选择图片目录")
@@ -1230,6 +1233,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.scene.load_image(path)
             self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
             self.load_annotations(path)
+            self.apply_class_colors_to_scene()
 
             self.undo_stack.clear()
             self.redo_stack.clear()
