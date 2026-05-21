@@ -123,10 +123,29 @@ class Exporter:
 
             elif s["type"] == "pose":
                 rect = s.get("rect", [0, 0, 0, 0])
-                cx = rect[0] / image_width
-                cy = rect[1] / image_height
-                w = rect[2] / image_width
-                h = rect[3] / image_height
+                val0, val1, w_val, h_val = rect
+                kps = s.get("keypoints", [])
+                
+                kpts_x = [kp[0] for kp in kps if len(kp) >= 2]
+                if kpts_x:
+                    min_kp_x = min(kpts_x)
+                    max_kp_x = max(kpts_x)
+                    mid_kp_x = (min_kp_x + max_kp_x) / 2
+                    if val0 < mid_kp_x - (max_kp_x - min_kp_x) * 0.15:
+                        # rect is [xmin, ymin, w, h] (top-left aligned)
+                        cx = val0 + w_val / 2
+                        cy = val1 + h_val / 2
+                    else:
+                        # rect is [cx, cy, w, h] (center aligned)
+                        cx = val0
+                        cy = val1
+                else:
+                    cx, cy = val0, val1
+
+                cx = cx / image_width
+                cy = cy / image_height
+                w = w_val / image_width
+                h = h_val / image_height
                 
                 # Ensure coordinates are properly normalized and within bounds [0, 1]
                 cx = max(0.0, min(1.0, cx))
@@ -178,7 +197,33 @@ class Exporter:
         ET.SubElement(size, "depth").text = "3"
 
         for s in shapes:
-            if s["type"] == "pose" or s["type"] == "obb":
+            if s["type"] == "pose":
+                rect = s.get("rect", [0, 0, 0, 0])
+                val0, val1, w, h = rect
+                kps = s.get("keypoints", [])
+                
+                kpts_x = [kp[0] for kp in kps if len(kp) >= 2]
+                if kpts_x:
+                    min_kp_x = min(kpts_x)
+                    max_kp_x = max(kpts_x)
+                    mid_kp_x = (min_kp_x + max_kp_x) / 2
+                    if val0 < mid_kp_x - (max_kp_x - min_kp_x) * 0.15:
+                        # rect is [xmin, ymin, w, h] (top-left aligned)
+                        cx = val0 + w / 2
+                        cy = val1 + h / 2
+                    else:
+                        # rect is [cx, cy, w, h] (center aligned)
+                        cx = val0
+                        cy = val1
+                else:
+                    cx, cy = val0, val1
+
+                min_x = cx - w / 2
+                max_x = cx + w / 2
+                min_y = cy - h / 2
+                max_y = cy + h / 2
+                
+            elif s["type"] == "obb":
                 rect = s.get("rect", [0, 0, 0, 0])
                 cx, cy, w, h = rect
                 min_x = cx - w / 2

@@ -399,6 +399,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     new_shape.update_label_text(label)
                 if hasattr(new_shape, 'update_label_position'):
                     new_shape.update_label_position(new_shape)
+                if hasattr(new_shape, 'set_color'):
+                    new_shape.set_color(self.classListWidget.get_class_color(label))
                     
         if added_count == 0:
             DialogOver(self, "暂无新的预测内容需要添加", "提示", "info")
@@ -752,6 +754,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 shape.update_label_position(shape)
             if hasattr(shape, 'update_label_visibility'):
                 shape.update_label_visibility(shape, is_selected=False, is_hovered=False)
+            if hasattr(shape, 'set_color'):
+                shape.set_color(self.classListWidget.get_class_color(prompt_text))
 
         self.auto_save_annotation()
 
@@ -1345,10 +1349,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def auto_save_annotation(self):
         if not self.current_image_path or not self.scene.img_item: return
         shapes_data = Exporter.extract_shapes(self.scene)
-        # if not shapes_data: return
+        base_name = os.path.splitext(self.current_image_path)[0]
+
+        if not shapes_data:
+            # 清理可能存在的空标注文件
+            for ext in [".json", ".txt", ".xml"]:
+                out_path = base_name + ext
+                if os.path.exists(out_path):
+                    try:
+                        os.remove(out_path)
+                        print(f"自动删除空标注文件: {out_path}")
+                    except Exception as e:
+                        print(f"自动删除空标注文件失败: {out_path}, {e}")
+            return
 
         img_rect = self.scene.img_item.pixmap().rect()
-        base_name = os.path.splitext(self.current_image_path)[0]
 
         try:
             if self.current_format == "json":
@@ -1568,12 +1583,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             DialogOver(self, "请先在左侧树形目录中打开图片", "操作错误", "warning")
             return
         shapes_data = Exporter.extract_shapes(self.scene)
-        # if not shapes_data:
-        #     DialogOver(self, "当前画布没有标注内容可保存", "为空提示", "warning")
-        #     return
+        base_name = os.path.splitext(self.current_image_path)[0]
+
+        if not shapes_data:
+            deleted_any = False
+            for ext in [".json", ".txt", ".xml"]:
+                out_path = base_name + ext
+                if os.path.exists(out_path):
+                    try:
+                        os.remove(out_path)
+                        deleted_any = True
+                        print(f"手动删除空标注文件: {out_path}")
+                    except Exception as e:
+                        print(f"手动删除空标注文件失败: {out_path}, {e}")
+            if deleted_any:
+                DialogOver(self, "检测到当前无标注信息，已清除对应的空标注文件！", "提示", "warning")
+            else:
+                DialogOver(self, "当前界面没有标注信息，无需保存！", "提示", "warning")
+            return
 
         img_rect = self.scene.img_item.pixmap().rect()
-        base_name = os.path.splitext(self.current_image_path)[0]
 
         try:
             if format_type == "json":

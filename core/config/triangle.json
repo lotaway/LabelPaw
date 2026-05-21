@@ -12,23 +12,23 @@
             "color": "#FF0000",
             "default_pos": [
                 0.5,
-                0.25
+                0.096
             ]
         },
         {
             "name": "bottom_right",
             "color": "#00FF00",
             "default_pos": [
-                0.75,
-                0.75
+                0.856,
+                0.904
             ]
         },
         {
             "name": "bottom_left",
             "color": "#0000FF",
             "default_pos": [
-                0.25,
-                0.75
+                0.144,
+                0.904
             ]
         }
     ],

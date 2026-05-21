@@ -12,135 +12,135 @@
             "color": "#FF0000",
             "default_pos": [
                 0.5,
-                0.15
+                0.11453
             ]
         },
         {
             "name": "left_eye",
             "color": "#FF5500",
             "default_pos": [
-                0.45,
-                0.12
+                0.45262,
+                0.096
             ]
         },
         {
             "name": "right_eye",
             "color": "#FF0055",
             "default_pos": [
-                0.55,
-                0.12
+                0.54727,
+                0.096
             ]
         },
         {
             "name": "left_ear",
             "color": "#FFAA00",
             "default_pos": [
-                0.4,
-                0.15
+                0.40483,
+                0.11453
             ]
         },
         {
             "name": "right_ear",
             "color": "#FF00AA",
             "default_pos": [
-                0.6,
-                0.15
+                0.59517,
+                0.11453
             ]
         },
         {
             "name": "left_shoulder",
             "color": "#FFFF00",
             "default_pos": [
-                0.35,
-                0.25
+                0.32179,
+                0.25375
             ]
         },
         {
             "name": "right_shoulder",
             "color": "#AAFF00",
             "default_pos": [
-                0.65,
-                0.25
+                0.67821,
+                0.25375
             ]
         },
         {
             "name": "left_elbow",
             "color": "#55FF00",
             "default_pos": [
-                0.25,
-                0.4
+                0.20341,
+                0.41168
             ]
         },
         {
             "name": "right_elbow",
             "color": "#00FF00",
             "default_pos": [
-                0.75,
-                0.4
+                0.79649,
+                0.41168
             ]
         },
         {
             "name": "left_wrist",
             "color": "#00FF55",
             "default_pos": [
-                0.2,
-                0.55
+                0.144,
+                0.53242
             ]
         },
         {
             "name": "right_wrist",
             "color": "#00FFAA",
             "default_pos": [
-                0.8,
-                0.55
+                0.856,
+                0.53242
             ]
         },
         {
             "name": "left_hip",
             "color": "#00FFFF",
             "default_pos": [
-                0.4,
-                0.5
+                0.38119,
+                0.53242
             ]
         },
         {
             "name": "right_hip",
             "color": "#00AAFF",
             "default_pos": [
-                0.6,
-                0.5
+                0.61881,
+                0.53242
             ]
         },
         {
             "name": "left_knee",
             "color": "#0055FF",
             "default_pos": [
-                0.35,
-                0.7
+                0.35745,
+                0.7182
             ]
         },
         {
             "name": "right_knee",
             "color": "#0000FF",
             "default_pos": [
-                0.65,
-                0.7
+                0.64244,
+                0.7182
             ]
         },
         {
             "name": "left_ankle",
             "color": "#5500FF",
             "default_pos": [
-                0.35,
-                0.9
+                0.33382,
+                0.904
             ]
         },
         {
             "name": "right_ankle",
             "color": "#AA00FF",
             "default_pos": [
-                0.65,
-                0.9
+                0.66608,
+                0.904
             ]
         }
     ],

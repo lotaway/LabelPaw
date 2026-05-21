@@ -332,7 +332,23 @@ class DatasetWorker(QThread):
                                 if not rect or not kps: continue
                                 self.is_pose_dataset = True
                                 self.kpt_shape = [len(kps), 3]
-                                cx, cy, bw, bh = rect
+                                val0, val1, bw, bh = rect
+                                kpts_x = [kp[0] for kp in kps if len(kp) >= 2]
+                                if kpts_x:
+                                    min_kp_x = min(kpts_x)
+                                    max_kp_x = max(kpts_x)
+                                    mid_kp_x = (min_kp_x + max_kp_x) / 2
+                                    if val0 < mid_kp_x - (max_kp_x - min_kp_x) * 0.15:
+                                        # rect is [xmin, ymin, w, h] (top-left aligned)
+                                        cx = val0 + bw / 2
+                                        cy = val1 + bh / 2
+                                    else:
+                                        # rect is [cx, cy, w, h] (center aligned)
+                                        cx = val0
+                                        cy = val1
+                                else:
+                                    cx, cy = val0, val1
+
                                 cx, cy = cx / w, cy / h
                                 bw, bh = bw / w, bh / h
                                 

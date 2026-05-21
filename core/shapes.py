@@ -45,6 +45,28 @@ def clamp_item_position(item, proposed_pos, overflow_ratio=0.0):
     return QPointF(new_x, new_y)
 
 
+def get_current_image_height(shape_item=None):
+    # 1. Try to get it from the item's own scene
+    if shape_item:
+        scene = shape_item.scene()
+        if scene and hasattr(scene, 'img_item') and scene.img_item:
+            pixmap = scene.img_item.pixmap()
+            if pixmap and not pixmap.isNull():
+                return pixmap.height()
+    
+    # 2. Try to get it from the active window's current image/scene
+    from PySide6.QtWidgets import QApplication
+    for widget in QApplication.topLevelWidgets():
+        if hasattr(widget, 'scene') and widget.scene:
+            scene = widget.scene
+            if hasattr(scene, 'img_item') and scene.img_item:
+                pixmap = scene.img_item.pixmap()
+                if pixmap and not pixmap.isNull():
+                    return pixmap.height()
+                
+    return 720 # Fallback
+
+
 class BaseShape:
     def setup_style(self, item):
         self.normal_pen = QPen(QColor(28, 126, 214), 2)
@@ -96,16 +118,44 @@ class BaseShape:
             return
 
         bound_rect = item.boundingRect()
-        x = bound_rect.center().x()
-        y = bound_rect.top() - 20
+        label_w = self.label_text.boundingRect().width()
+        label_h = self.label_text.boundingRect().height()
         
-        # 将局部坐标的顶部转换为场景坐标，检查是否超出图片上边缘 (假设图片顶部为 0)
-        scene_top_y = item.mapToScene(QPointF(x, y)).y()
-        if scene_top_y < 0:
-            # 如果超出顶部，将标签显示在框内部中心点位置
-            y = bound_rect.center().y() - self.label_text.boundingRect().height() / 2
+        # Default position: above the bounding box
+        x = bound_rect.center().x() - label_w / 2
+        y = bound_rect.top() - 22
+        
+        # Get scene coordinates for this position
+        scene_pos = item.mapToScene(QPointF(x, y))
+        
+        # Get image bounds from scene or active main window
+        img_w, img_h = 1280, 720
+        scene = item.scene()
+        if scene and hasattr(scene, 'img_item') and scene.img_item:
+            pix = scene.img_item.pixmap()
+            if pix and not pix.isNull():
+                img_w = pix.width()
+                img_h = pix.height()
+        else:
+            from PySide6.QtWidgets import QApplication
+            for widget in QApplication.topLevelWidgets():
+                if hasattr(widget, 'scene') and widget.scene:
+                    sc = widget.scene
+                    if hasattr(sc, 'img_item') and sc.img_item:
+                        pix = sc.img_item.pixmap()
+                        if pix and not pix.isNull():
+                            img_w = pix.width()
+                            img_h = pix.height()
+                            break
 
-        self.label_text.setPos(x - self.label_text.boundingRect().width() / 2, y)
+        # Check if the label goes above the image top, or beyond left/right edges
+        margin = 5.0
+        if scene_pos.y() < margin or scene_pos.x() < margin or (scene_pos.x() + label_w) > (img_w - margin):
+            # Center the label inside the bounding box
+            x = bound_rect.center().x() - label_w / 2
+            y = bound_rect.center().y() - label_h / 2
+            
+        self.label_text.setPos(x, y)
 
     def update_label_text(self, text):
         if hasattr(self, 'label_text') and self.label_text:
@@ -618,10 +668,16 @@ class PoseShape(QGraphicsObject, BaseShape):
         min_y = min(kp.pos().y() for kp in self.kps)
         max_y = max(kp.pos().y() for kp in self.kps)
         
-        # Calculate new local bounding box for keypoints tightly
-        padding = 7.5 # Ultralytics standard padding is exactly 7.5px per side (15px total width/height addition)
-        new_w = max((max_x - min_x) + padding * 2, 15)
-        new_h = max((max_y - min_y) + padding * 2, 15)
+        kpt_w = max_x - min_x
+        kpt_h = max_y - min_y
+        
+        # YOLO 官方/Ultralytics 标注标准的固定像素边距：
+        # 边距在物理上正好是图片高度的 2%！(例如 720p 下为 14.4px)
+        img_h = get_current_image_height(self)
+        padding = max(img_h * 0.02, 10.0)
+        
+        new_w = max(kpt_w + padding * 2, 15)
+        new_h = max(kpt_h + padding * 2, 15)
         
         target_rect = QRectF(min_x - padding, min_y - padding, new_w, new_h)
         curr_rect = QRectF(-self.box_w/2, -self.box_h/2, self.box_w, self.box_h)

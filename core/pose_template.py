@@ -1,6 +1,44 @@
 import json
 import os
 
+def normalize_template(template):
+    keypoints = template.get("keypoints", [])
+    if not keypoints:
+        return template
+    xs = [kp["default_pos"][0] for kp in keypoints]
+    ys = [kp["default_pos"][1] for kp in keypoints]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    
+    span_x = max_x - min_x
+    span_y = max_y - min_y
+    
+    target_min_x = 0.144
+    target_max_x = 0.856
+    target_min_y = 0.096
+    target_max_y = 0.904
+    
+    target_span_x = target_max_x - target_min_x  # 0.712
+    target_span_y = target_max_y - target_min_y  # 0.808
+    
+    for kp in keypoints:
+        x, y = kp["default_pos"]
+        
+        # Normalize to target bounds
+        if span_x > 0:
+            new_x = target_min_x + ((x - min_x) / span_x) * target_span_x
+        else:
+            new_x = 0.5
+            
+        if span_y > 0:
+            new_y = target_min_y + ((y - min_y) / span_y) * target_span_y
+        else:
+            new_y = 0.5
+            
+        kp["default_pos"] = [round(new_x, 5), round(new_y, 5)]
+        
+    return template
+
 DEFAULT_TEMPLATES = [
     {
         "name": "Person (COCO)",
@@ -8,23 +46,23 @@ DEFAULT_TEMPLATES = [
         "description": "COCO human body pose estimation",
         "kpt_shape": [17, 3],
         "keypoints": [
-            {"name": "nose", "color": "#FF0000", "default_pos": [0.5, 0.15]},
-            {"name": "left_eye", "color": "#FF5500", "default_pos": [0.45, 0.12]},
-            {"name": "right_eye", "color": "#FF0055", "default_pos": [0.55, 0.12]},
-            {"name": "left_ear", "color": "#FFAA00", "default_pos": [0.4, 0.15]},
-            {"name": "right_ear", "color": "#FF00AA", "default_pos": [0.6, 0.15]},
-            {"name": "left_shoulder", "color": "#FFFF00", "default_pos": [0.35, 0.25]},
-            {"name": "right_shoulder", "color": "#AAFF00", "default_pos": [0.65, 0.25]},
-            {"name": "left_elbow", "color": "#55FF00", "default_pos": [0.25, 0.4]},
-            {"name": "right_elbow", "color": "#00FF00", "default_pos": [0.75, 0.4]},
-            {"name": "left_wrist", "color": "#00FF55", "default_pos": [0.2, 0.55]},
-            {"name": "right_wrist", "color": "#00FFAA", "default_pos": [0.8, 0.55]},
-            {"name": "left_hip", "color": "#00FFFF", "default_pos": [0.4, 0.5]},
-            {"name": "right_hip", "color": "#00AAFF", "default_pos": [0.6, 0.5]},
-            {"name": "left_knee", "color": "#0055FF", "default_pos": [0.35, 0.7]},
-            {"name": "right_knee", "color": "#0000FF", "default_pos": [0.65, 0.7]},
-            {"name": "left_ankle", "color": "#5500FF", "default_pos": [0.35, 0.9]},
-            {"name": "right_ankle", "color": "#AA00FF", "default_pos": [0.65, 0.9]}
+            {"name": "nose", "color": "#FF0000", "default_pos": [0.5, 0.11212]},
+            {"name": "left_eye", "color": "#FF5500", "default_pos": [0.45011, 0.09347]},
+            {"name": "right_eye", "color": "#FF0055", "default_pos": [0.54978, 0.09347]},
+            {"name": "left_ear", "color": "#FFAA00", "default_pos": [0.39978, 0.11212]},
+            {"name": "right_ear", "color": "#FF00AA", "default_pos": [0.60022, 0.11212]},
+            {"name": "left_shoulder", "color": "#FFFF00", "default_pos": [0.31233, 0.25224]},
+            {"name": "right_shoulder", "color": "#AAFF00", "default_pos": [0.68767, 0.25224]},
+            {"name": "left_elbow", "color": "#55FF00", "default_pos": [0.18767, 0.41120]},
+            {"name": "right_elbow", "color": "#00FF00", "default_pos": [0.81222, 0.41120]},
+            {"name": "left_wrist", "color": "#00FF55", "default_pos": [0.12511, 0.53272]},
+            {"name": "right_wrist", "color": "#00FFAA", "default_pos": [0.87489, 0.53272]},
+            {"name": "left_hip", "color": "#00FFFF", "default_pos": [0.37489, 0.53272]},
+            {"name": "right_hip", "color": "#00AAFF", "default_pos": [0.62511, 0.53272]},
+            {"name": "left_knee", "color": "#0055FF", "default_pos": [0.34989, 0.71971]},
+            {"name": "right_knee", "color": "#0000FF", "default_pos": [0.65, 0.71971]},
+            {"name": "left_ankle", "color": "#5500FF", "default_pos": [0.325, 0.90671]},
+            {"name": "right_ankle", "color": "#AA00FF", "default_pos": [0.67489, 0.90671]}
         ],
         "connections": [
             [15, 13], [13, 11], [16, 14], [14, 12], [11, 12],
@@ -666,6 +704,10 @@ DEFAULT_TEMPLATES = [
     }
 ]
 
+# Run dynamic normalization on all default templates to ensure strict conformance
+for _t in DEFAULT_TEMPLATES:
+    normalize_template(_t)
+
 class TemplateManager:
     def __init__(self, config_dir="core/config"):
         self.config_dir = config_dir
@@ -683,12 +725,13 @@ class TemplateManager:
                     try:
                         with open(filepath, "r", encoding="utf-8") as f:
                             t = json.load(f)
+                            t = normalize_template(t)
                             self.templates.append(t)
                     except Exception as e:
                         print(f"加载模板失败 {filename}: {e}")
         
         if not self.templates:
-            self.templates = DEFAULT_TEMPLATES.copy()
+            self.templates = [normalize_template(t.copy()) for t in DEFAULT_TEMPLATES]
             self.save_all()
 
     def save_all(self):
@@ -710,6 +753,7 @@ class TemplateManager:
         self.save_all()
 
     def add_template(self, template):
+        template = normalize_template(template)
         for i, t in enumerate(self.templates):
             if t["name"] == template["name"]:
                 self.templates[i] = template
