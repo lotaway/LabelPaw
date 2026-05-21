@@ -896,7 +896,7 @@ class PolyShape(QGraphicsPolygonItem, BaseShape):
         super().hoverEnterEvent(event)
 
     def hoverMoveEvent(self, event):
-        if self.is_temp or self._dragging_edge_idx != -1:
+        if self.is_temp or self._dragging_edge_idx != -1 or not self.isSelected():
             super().hoverMoveEvent(event)
             return
 
@@ -942,7 +942,7 @@ class PolyShape(QGraphicsPolygonItem, BaseShape):
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton and self.ghost_idx != -1:
+        if event.button() == Qt.LeftButton and self.ghost_idx != -1 and self.isSelected():
             self._dragging_edge_idx = self.ghost_idx
             poly = self.polygon()
             poly.insert(self.ghost_idx, self.ghost_pos)
@@ -1040,6 +1040,10 @@ class PolyShape(QGraphicsPolygonItem, BaseShape):
             if change == QGraphicsItem.ItemSelectedHasChanged:
                 self._update_handle_visibility()
                 self.update_label_visibility(self, is_selected=self.isSelected(), is_hovered=self._hovered)
+                if not self.isSelected():
+                    self.ghost_idx = -1
+                    if hasattr(self, 'ghost_handle'):
+                        self.ghost_handle.hide()
             elif change == QGraphicsItem.ItemPositionHasChanged:
                 self.update_label_position(self)
         return super().itemChange(change, value)
