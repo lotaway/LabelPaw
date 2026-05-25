@@ -7,7 +7,6 @@ ultralytics/
 # 忽略 IDE 配置文件
 .idea/
 .vscode/
-.trae/
 
 # 忽略 Python 缓存文件
 __pycache__/
