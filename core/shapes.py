@@ -81,6 +81,10 @@ class BaseShape:
 
     def apply_hover_enter(self, item):
         if not getattr(item, 'is_temp', False):
+            scene = item.scene()
+            if scene and getattr(scene, 'mode', None) == 2:  # CanvasMode.POLY
+                if len(getattr(scene, 'poly_pts', [])) > 0:
+                    return
             item.setBrush(self.hover_brush)
             item.setCursor(Qt.PointingHandCursor)
 
@@ -266,7 +270,13 @@ class RectShape(QGraphicsRectItem, BaseShape):
         super().hoverLeaveEvent(event)
 
     def _update_handle_visibility(self):
-        visible = self.isSelected() or self._hovered
+        scene = self.scene()
+        is_drawing_poly = False
+        if scene and getattr(scene, 'mode', None) == 2:
+            if len(getattr(scene, 'poly_pts', [])) > 0:
+                is_drawing_poly = True
+                
+        visible = self.isSelected() or (self._hovered and not is_drawing_poly)
         for h in [self.lt_handle, self.rt_handle, self.lb_handle, self.rb_handle]:
             h.setVisible(visible)
 
@@ -993,7 +1003,13 @@ class PolyShape(QGraphicsPolygonItem, BaseShape):
 
     def _update_handle_visibility(self):
         if self.is_temp: return
-        visible = self.isSelected() or self._hovered
+        scene = self.scene()
+        is_drawing_poly = False
+        if scene and getattr(scene, 'mode', None) == 2:
+            if len(getattr(scene, 'poly_pts', [])) > 0:
+                is_drawing_poly = True
+                
+        visible = self.isSelected() or (self._hovered and not is_drawing_poly)
         for h in self.handles:
             h.setVisible(visible)
 
@@ -1323,8 +1339,15 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
 
     def hoverEnterEvent(self, event):
         self._hovered = True
-        c = self._base_color
-        self.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 120)))
+        scene = self.scene()
+        is_drawing_poly = False
+        if scene and getattr(scene, 'mode', None) == 2:
+            if len(getattr(scene, 'poly_pts', [])) > 0:
+                is_drawing_poly = True
+                
+        if not is_drawing_poly:
+            c = self._base_color
+            self.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 120)))
         self._update_handle_visibility()
         super().hoverEnterEvent(event)
 
@@ -1337,7 +1360,13 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
 
     def _update_handle_visibility(self):
         if self.is_temp: return
-        visible = self.isSelected() or self._hovered
+        scene = self.scene()
+        is_drawing_poly = False
+        if scene and getattr(scene, 'mode', None) == 2:
+            if len(getattr(scene, 'poly_pts', [])) > 0:
+                is_drawing_poly = True
+                
+        visible = self.isSelected() or (self._hovered and not is_drawing_poly)
         for h in self.handles:
             h.setVisible(visible)
 

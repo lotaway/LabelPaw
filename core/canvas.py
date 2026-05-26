@@ -18,6 +18,7 @@ class CanvasMode:
         return names.get(mode, "未知")
 
 
+
 class Canvas(QGraphicsScene):
     mouse_moved = Signal(int, int)
     shape_drawn = Signal(object)
@@ -247,23 +248,27 @@ class Canvas(QGraphicsScene):
 
         items = self.items(clamped_pt)
         clicked_item = None
-        for item in items:
-            from core.shapes import HandleItem, OBBHandle, KeypointHandle, BaseShape
-            if isinstance(item, (HandleItem, OBBHandle, KeypointHandle)) and item.isVisible():
-                if not getattr(item.parentItem(), 'is_temp', False):
-                    clicked_item = item
-                    break
-        if not clicked_item:
+        
+        is_drawing_poly = (self.mode == CanvasMode.POLY and len(self.poly_pts) > 0)
+        
+        if not is_drawing_poly:
             for item in items:
-                from core.shapes import BaseShape
-                if isinstance(item, BaseShape):
-                    if not getattr(item, 'is_temp', False):
+                from core.shapes import HandleItem, OBBHandle, KeypointHandle, BaseShape
+                if isinstance(item, (HandleItem, OBBHandle, KeypointHandle)) and item.isVisible():
+                    if not getattr(item.parentItem(), 'is_temp', False):
                         clicked_item = item
                         break
-                elif item.parentItem() and isinstance(item.parentItem(), BaseShape):
-                    if not getattr(item.parentItem(), 'is_temp', False):
-                        clicked_item = item.parentItem()
-                        break
+            if not clicked_item:
+                for item in items:
+                    from core.shapes import BaseShape
+                    if isinstance(item, BaseShape):
+                        if not getattr(item, 'is_temp', False):
+                            clicked_item = item
+                            break
+                    elif item.parentItem() and isinstance(item.parentItem(), BaseShape):
+                        if not getattr(item.parentItem(), 'is_temp', False):
+                            clicked_item = item.parentItem()
+                            break
 
         # 允许在关闭 SAM 或是使用 YOLO 的情况下编辑，或者点击到了手柄也允许编辑
         from core.shapes import HandleItem, OBBHandle, KeypointHandle, PoseShape
