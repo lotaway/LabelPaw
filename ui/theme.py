@@ -357,11 +357,14 @@ QLabel { color: #cbd5e1; background: transparent; }
     border: 1px solid #22C55E;
 }
 #classListWidget {
+    background-color: transparent;
+    border: none;
+    outline: 0;
+}
+#annotationTreeCard {
     background-color: #0F172A;
     border: 1px solid #334155;
     border-radius: 8px;
-    padding: 4px;
-    outline: 0;
 }
 #classListWidget::item {
     padding: 4px 8px;
@@ -734,11 +737,14 @@ QLabel { color: #334155; background: transparent; }
     border: 1px solid #22C55E;
 }
 #classListWidget {
+    background-color: transparent;
+    border: none;
+    outline: 0;
+}
+#annotationTreeCard {
     background-color: #FFFFFF;
     border: 1px solid #E2E8F0;
     border-radius: 8px;
-    padding: 4px;
-    outline: 0;
 }
 #classListWidget::item {
     padding: 4px 8px;

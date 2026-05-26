@@ -309,6 +309,7 @@ class AnnotationTreeWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self._class_list = []
         self._class_colors = {}
         self._color_index = 0
@@ -325,9 +326,11 @@ class AnnotationTreeWidget(QWidget):
         self._connect_signals()
 
     def _build_ui(self):
+        self.setObjectName("annotationTreeCard")
+        
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
         # 1. Search bar
         self.searchInput = QLineEdit()
@@ -661,7 +664,8 @@ class AnnotationTreeWidget(QWidget):
             self._class_colors[cls_name] = color
         elif cls_name not in self._class_colors:
             self._class_colors[cls_name] = get_palette_color(self._color_index)
-            self._color_index += 1
+            
+        self._color_index += 1  # 无论是否有预设颜色，都推进颜色索引，确保新加类别颜色不复用初始颜色
 
         self.refresh_tree_items()
 

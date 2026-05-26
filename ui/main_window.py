@@ -585,7 +585,7 @@ class Ui_MainWindow(object):
         # Container for classes
         self.classesContainer = QWidget()
         classesLayout = QVBoxLayout(self.classesContainer)
-        classesLayout.setContentsMargins(0, 0, 0, 0)
+        classesLayout.setContentsMargins(0, 0, 0, 8)
         self.labelClasses = QLabel("历史类别:")
         self.classListWidget = AnnotationTreeWidget()
         self.listClasses = self.classListWidget.listWidget  # 兼容旧引用
