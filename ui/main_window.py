@@ -1,8 +1,8 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QToolBar, QListWidget, QGraphicsView,
-                               QLabel, QLineEdit, QPushButton, QStatusBar, QMenu, QComboBox, QSizePolicy, QAbstractItemView)
-from ui.class_list_widget import ClassListWidget
+                               QLabel, QLineEdit, QPushButton, QStatusBar, QMenu, QComboBox, QSizePolicy, QAbstractItemView, QSplitter)
+from ui.annotation_tree_widget import AnnotationTreeWidget
 from PySide6.QtCore import Qt, Signal, QRect, QSize
 from PySide6.QtGui import QAction, QActionGroup, QPainter, QColor, QFont, QIcon, QPixmap
 
@@ -578,19 +578,40 @@ class Ui_MainWindow(object):
         rightTitleBar.addStretch()
         self.dockLayout.addLayout(rightTitleBar)
 
-        self.labelClasses = QLabel("历史类别:")
-        self.classListWidget = ClassListWidget()
-        self.listClasses = self.classListWidget.listWidget  # 兼容旧引用
+        # QSplitter to allow resizing historical categories and file list
+        self.rightSplitter = QSplitter(Qt.Vertical)
+        self.rightSplitter.setObjectName("rightSplitter")
 
+        # Container for classes
+        self.classesContainer = QWidget()
+        classesLayout = QVBoxLayout(self.classesContainer)
+        classesLayout.setContentsMargins(0, 0, 0, 0)
+        self.labelClasses = QLabel("历史类别:")
+        self.classListWidget = AnnotationTreeWidget()
+        self.listClasses = self.classListWidget.listWidget  # 兼容旧引用
+        classesLayout.addWidget(self.labelClasses)
+        classesLayout.addWidget(self.classListWidget)
+
+        # Container for files
+        self.filesContainer = QWidget()
+        filesLayout = QVBoxLayout(self.filesContainer)
+        filesLayout.setContentsMargins(0, 0, 0, 0)
         self.labelFiles = QLabel("文件列表:")
         self.listFiles = QListWidget()
         self.listFiles.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.listFiles.setContextMenuPolicy(Qt.CustomContextMenu)
+        filesLayout.addWidget(self.labelFiles)
+        filesLayout.addWidget(self.listFiles)
 
-        self.dockLayout.addWidget(self.labelClasses)
-        self.dockLayout.addWidget(self.classListWidget, 2)  # 历史类别分配x份自适应空间
-        self.dockLayout.addWidget(self.labelFiles)
-        self.dockLayout.addWidget(self.listFiles, 4)  # 文件列表分配x份自适应空间
+        # Add both to splitter
+        self.rightSplitter.addWidget(self.classesContainer)
+        self.rightSplitter.addWidget(self.filesContainer)
+        
+        # Set initial stretch/sizes
+        self.rightSplitter.setStretchFactor(0, 3)
+        self.rightSplitter.setStretchFactor(1, 2)
+
+        self.dockLayout.addWidget(self.rightSplitter)
 
         # ==== 右下角区域 ====
         self.samTextGroup = QWidget()

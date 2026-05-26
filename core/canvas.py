@@ -24,6 +24,7 @@ class Canvas(QGraphicsScene):
     shape_drawn = Signal(object)
     shape_double_clicked = Signal(object)
     state_changed = Signal()
+    canvas_item_hovered = Signal(object, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -238,22 +239,14 @@ class Canvas(QGraphicsScene):
         
         is_yolo = getattr(self.sam_client, 'current_model_key', '').startswith('yolo')
 
-        # ---------------- SAM 确认生成 ----------------
-        # 支持 RBOX, 但仅限 SAM 模型
-        if self.sam_enabled and not is_yolo and event.button() == Qt.LeftButton and self.mode in [CanvasMode.RECT, CanvasMode.POLY,
-                                                                                  CanvasMode.RBOX]:
-            if self.is_inside_image(pt) and self.sam_client:
-                self.sam_client.request_inference(clamped_pt.x(), clamped_pt.y(), is_click=True)
-            return
-
-        items = self.items(clamped_pt)
+        # 1. 优先检测是否点击在已有的图形或者手柄上，如果是，则直接进入编辑/选择状态
         clicked_item = None
-        
         is_drawing_poly = (self.mode == CanvasMode.POLY and len(self.poly_pts) > 0)
         
         if not is_drawing_poly:
+            items = self.items(clamped_pt)
             for item in items:
-                from core.shapes import HandleItem, OBBHandle, KeypointHandle, BaseShape
+                from core.shapes import HandleItem, OBBHandle, KeypointHandle
                 if isinstance(item, (HandleItem, OBBHandle, KeypointHandle)) and item.isVisible():
                     if not getattr(item.parentItem(), 'is_temp', False):
                         clicked_item = item
@@ -270,24 +263,20 @@ class Canvas(QGraphicsScene):
                             clicked_item = item.parentItem()
                             break
 
-        # 允许在关闭 SAM 或是使用 YOLO 的情况下编辑，或者点击到了手柄也允许编辑
-        from core.shapes import HandleItem, OBBHandle, KeypointHandle, PoseShape
-        is_handle = isinstance(clicked_item, (HandleItem, OBBHandle, KeypointHandle))
-        is_pose = isinstance(clicked_item, PoseShape)
-        if clicked_item and (not self.sam_enabled or is_yolo or is_handle or is_pose):
-            # First, let the item handle the event (e.g. for dragging)
-            # This is crucial so that QGraphicsScene can set it as the mouse grabber
+        if clicked_item:
+            # 首先让图元处理事件（如拖拽、调整大小等）
             super().mousePressEvent(event)
             
-            # Then handle our custom selection logic
+            # 自定义选中逻辑
             if event.button() == Qt.LeftButton:
                 if not (event.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)):
-                    # Deselect all other items
+                    # 取消其他所有图形的选中
                     for item in self.selectedItems():
                         if item != clicked_item and item != clicked_item.parentItem():
                             item.setSelected(False)
                     
-                    # Select the clicked item (or its parent if it's a handle)
+                    # 选中当前被点击的图元（手柄则选中其父级图形）
+                    from core.shapes import HandleItem, OBBHandle, KeypointHandle
                     if isinstance(clicked_item, (HandleItem, OBBHandle, KeypointHandle)):
                         parent = clicked_item.parentItem()
                         if parent:
@@ -295,7 +284,15 @@ class Canvas(QGraphicsScene):
                     else:
                         clicked_item.setSelected(True)
             return
-            
+
+        # ---------------- SAM 确认生成 (仅限点击在空白处时触发) ----------------
+        # 支持 RBOX, 但仅限 SAM 模型
+        if self.sam_enabled and not is_yolo and event.button() == Qt.LeftButton and self.mode in [CanvasMode.RECT, CanvasMode.POLY,
+                                                                                  CanvasMode.RBOX]:
+            if self.is_inside_image(pt) and self.sam_client:
+                self.sam_client.request_inference(clamped_pt.x(), clamped_pt.y(), is_click=True)
+            return
+
         # 如果点击了空白处，取消所有选中状态 (退出编辑模式)
         if event.button() == Qt.LeftButton and not clicked_item:
             has_selection = len(self.selectedItems()) > 0
@@ -349,7 +346,29 @@ class Canvas(QGraphicsScene):
                 self.finish_poly_shape()
 
     def mouseReleaseEvent(self, event):
+        # ---- 核心修复：防止 Qt 的选择切换 (toggle) 导致松开鼠标时图形被取消选中 ----
+        # Qt 的 QGraphicsScene.mouseReleaseEvent 内部会对 "按下前已选中" 的图形执行取消选中。
+        # 由于我们在 mousePressEvent 中先调用 super() 再手动 setSelected(True)，
+        # Qt 误认为图形在按下前"已选中"，于是在释放时自动 toggle 取消。
+        # 解决方案：在 super() 前快照当前选中的图形，调用 super() 后如果被清空则立即恢复。
+        from core.shapes import BaseShape
+        selected_before = [item for item in self.selectedItems()
+                           if isinstance(item, BaseShape) and not getattr(item, 'is_temp', False)]
+
+        # 阻止场景信号，防止 super() 中的 toggle 取消触发 selectionChanged 连锁反应
+        self.blockSignals(True)
         super().mouseReleaseEvent(event)
+        self.blockSignals(False)
+
+        # 如果 super() 把我们选中的图形取消了，立即恢复
+        if selected_before:
+            selected_after = [item for item in self.selectedItems()
+                              if isinstance(item, BaseShape) and not getattr(item, 'is_temp', False)]
+            if not selected_after:
+                for item in selected_before:
+                    if item.scene() == self:
+                        item.setSelected(True)
+
         is_sam_model = getattr(self.sam_client, 'current_model_key', '').startswith('sam')
         if self.sam_enabled and is_sam_model: return
 

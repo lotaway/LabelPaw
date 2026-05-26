@@ -87,11 +87,16 @@ class BaseShape:
                     return
             item.setBrush(self.hover_brush)
             item.setCursor(Qt.PointingHandCursor)
+            if scene and hasattr(scene, 'canvas_item_hovered'):
+                scene.canvas_item_hovered.emit(item, True)
 
     def apply_hover_leave(self, item):
         if not getattr(item, 'is_temp', False):
             item.setBrush(self.normal_brush)
             item.setCursor(Qt.ArrowCursor)
+            scene = item.scene()
+            if scene and hasattr(scene, 'canvas_item_hovered'):
+                scene.canvas_item_hovered.emit(item, False)
 
     def set_color(self, color):
         """dynamically update shape color based on class color"""
@@ -1099,12 +1104,18 @@ class PointShape(QGraphicsEllipseItem, BaseShape):
         self.setCursor(Qt.PointingHandCursor)
         self.update_label_visibility(self, is_selected=self.isSelected(), is_hovered=True)
         super().hoverEnterEvent(event)
+        scene = self.scene()
+        if scene and hasattr(scene, 'canvas_item_hovered'):
+            scene.canvas_item_hovered.emit(self, True)
 
     def hoverLeaveEvent(self, event):
         self.setBrush(self.normal_brush)
         self.setCursor(Qt.ArrowCursor)
         self.update_label_visibility(self, is_selected=self.isSelected(), is_hovered=False)
         super().hoverLeaveEvent(event)
+        scene = self.scene()
+        if scene and hasattr(scene, 'canvas_item_hovered'):
+            scene.canvas_item_hovered.emit(self, False)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionChange:
@@ -1348,6 +1359,8 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
         if not is_drawing_poly:
             c = self._base_color
             self.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 120)))
+            if scene and hasattr(scene, 'canvas_item_hovered'):
+                scene.canvas_item_hovered.emit(self, True)
         self._update_handle_visibility()
         super().hoverEnterEvent(event)
 
@@ -1357,6 +1370,9 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
         self.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 50)))
         self._update_handle_visibility()
         super().hoverLeaveEvent(event)
+        scene = self.scene()
+        if scene and hasattr(scene, 'canvas_item_hovered'):
+            scene.canvas_item_hovered.emit(self, False)
 
     def _update_handle_visibility(self):
         if self.is_temp: return

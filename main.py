@@ -30,6 +30,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.template_manager = TemplateManager()
 
         self.is_dark_theme = False
+        self.classListWidget.set_theme(self.is_dark_theme)
         self.setStyleSheet(LIGHT_THEME)
 
         self.scene = Canvas(self)
@@ -234,6 +235,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.scene.mouse_moved.connect(self.update_coordinate_label)
         self.scene.shape_drawn.connect(self.handle_new_shape)
 
+        # Annotation tree dual-sync signals
+        self.scene.state_changed.connect(self.update_annotation_tree)
+        self.scene.selectionChanged.connect(self.sync_selection_to_tree)
+        self.scene.canvas_item_hovered.connect(self.classListWidget.highlight_item_by_shape)
+
         self.scene.shape_double_clicked.connect(self.edit_shape_label)  # 双击修改
 
         # 类别管理组件信号
@@ -241,6 +247,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.classListWidget.class_renamed.connect(self._on_class_renamed_from_widget)
         self.classListWidget.color_changed.connect(self.on_class_color_changed)
         self.classListWidget.item_changed.connect(self.on_list_item_changed)
+        self.classListWidget.shape_class_reassigned.connect(self.on_shape_class_reassigned)
 
     def on_predict_clicked(self):
         if not self.current_image_path:
@@ -689,6 +696,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     shape._update_handle_visibility()
 
         self.auto_save_annotation()
+        self.update_annotation_tree()
 
     def open_dataset_tool(self):
         try:
@@ -892,6 +900,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.samIcon.setPixmap(self.set_icon_color(QIcon("ui/icon/魔法-copy.svg"), self.current_icon_color).pixmap(24, 24))
             self.btnDatasetTool.setIcon(self.set_icon_color(QIcon("ui/icon/wrench.svg"), self.current_icon_color))
             self.formatWidget.btn.setIcon(self.set_icon_color(QIcon("ui/icon/格式.svg"), self.current_icon_color))
+        self.classListWidget.set_theme(self.is_dark_theme)
 
     def show_author_info(self):
         dialog = AuthorInfoDialog(self)
@@ -1138,11 +1147,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             cls_name = shape.template.get("label", shape.template.get("name", "Unknown"))
             ok = True
         else:
-            last_class = self.class_list[-1] if self.class_list else ""
-            from ui.label_dialog import LabelDialog
-            dlg = LabelDialog("输入类别", "请选择或输入类别名称:", self.class_list, last_class, self.is_dark_theme, self)
-            ok = dlg.exec()
-            cls_name = dlg.get_text()
+            # 去除弹窗：直接获取当前选中的类别，没有则使用第一个或默认 "dog"
+            selected_cls = self.classListWidget.get_selected_class()
+            if not selected_cls:
+                classes = self.classListWidget.get_class_list()
+                selected_cls = classes[0] if classes else "dog"
+            cls_name = selected_cls
+            ok = True
 
         if ok and cls_name:
             cls_name = cls_name.strip()
@@ -1166,40 +1177,52 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 item.setSelected(False)
             shape.setSelected(True)
             self.push_state()
+            self.update_annotation_tree()
         else:
             self.scene.removeItem(shape)
 
     def edit_shape_label(self, shape):
-        """二次修改已有标注框的类别"""
-        current_label = shape.label
-        from ui.label_dialog import LabelDialog
-        dlg = LabelDialog("修改类别", "请重新选择或输入类别名称:", self.class_list, current_label, self.is_dark_theme, self)
-        ok = dlg.exec()
-        cls_name = dlg.get_text()
-
-        if ok and cls_name:
-            cls_name = cls_name.strip()
-            if cls_name not in self.class_list:
-                # self.class_list.append(cls_name)
-                # self.listClasses.addItem(cls_name)
-                self.add_class_to_list(cls_name)
-                self.save_classes()
-
-            # 更新形状的数据和标签显示
-            shape.label = cls_name
-            if hasattr(shape, 'update_label_text'):
-                shape.update_label_text(cls_name)
-            # 应用类别颜色
-            if hasattr(shape, 'set_color'):
-                shape.set_color(self.classListWidget.get_class_color(cls_name))
-
-            # 修改完自动保存一次
-            self.auto_save_annotation()
-            self.push_state()
+        """二次修改已有标注框的类别 (根据用户要求，弹窗已去除，双击忽略或做其他逻辑)"""
+        pass
 
     def on_list_item_changed(self, item):
         """ClassListWidget item_changed fallback (rename already handled by class_renamed signal)"""
         pass
+
+    def on_shape_class_reassigned(self, shape, new_class_name):
+        """当用户在右侧历史类别列表点击父类别时，将画布上已选中图形的类别修改为该类别"""
+        old_label = getattr(shape, 'label', '')
+        if old_label == new_class_name:
+            return  # 类别未变化，无需操作
+
+        shape.label = new_class_name
+        if hasattr(shape, 'update_label_text'):
+            shape.update_label_text(new_class_name)
+        if hasattr(shape, 'update_label_position'):
+            shape.update_label_position(shape)
+        # 应用新类别的颜色
+        if hasattr(shape, 'set_color'):
+            shape.set_color(self.classListWidget.get_class_color(new_class_name))
+
+        # 更新标注树和保存
+        self.update_annotation_tree()
+        self.auto_save_annotation()
+
+    def update_annotation_tree(self):
+        shapes = []
+        for item in self.scene.items():
+            from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
+            if isinstance(item, (RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape)) and not getattr(item, 'is_temp', False):
+                shapes.append(item)
+        self.classListWidget.update_annotations(shapes)
+
+    def sync_selection_to_tree(self):
+        from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
+        selected_shapes = [item for item in self.scene.selectedItems() if isinstance(item, (RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape)) and not getattr(item, 'is_temp', False)]
+        if selected_shapes:
+            self.classListWidget.select_item_by_shape(selected_shapes[0])
+        else:
+            self.classListWidget.clear_tree_selection()
 
     def open_dir(self):
         dir_path = QFileDialog.getExistingDirectory(self, "选择图片目录")
@@ -1323,6 +1346,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
             self.load_annotations(path)
             self.apply_class_colors_to_scene()
+            self.update_annotation_tree()
 
             self.undo_stack.clear()
             self.redo_stack.clear()
