@@ -125,7 +125,7 @@ class BaseShape:
         self.setBrush(self.normal_brush)
         if hasattr(self, 'label_text') and self.label_text:
             self.label_text.setDefaultTextColor(color)
-        for attr in ['lt_handle', 'rt_handle', 'lb_handle', 'rb_handle']:
+        for attr in ['lt_handle', 'rt_handle', 'lb_handle', 'rb_handle', 't_handle', 'b_handle', 'l_handle', 'r_handle']:
             h = getattr(self, attr, None)
             if h:
                 h.setPen(QPen(color, 1.5))
@@ -194,21 +194,48 @@ class BaseShape:
             self.label_text.show()
 
 
-class HandleItem(QGraphicsEllipseItem):
-    def __init__(self, parent, is_lt=False, is_rb=False):
-        r = 3.5
-        super().__init__(-r, -r, r * 2, r * 2, parent)
-        self.setBrush(QBrush(QColor(255, 255, 255)))
-        self.setPen(QPen(QColor(28, 126, 214), 1.5))
-        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemSendsGeometryChanges)
+class HandleItem(QGraphicsItem):
+    def __init__(self, parent, cursor_type=Qt.SizeAllCursor, handle_type='circle'):
+        super().__init__(parent)
+        self.cursor_type = cursor_type
+        self.handle_type = handle_type  # 'circle', 'h_capsule', 'v_capsule'
         self.setAcceptHoverEvents(True)
+        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemSendsGeometryChanges)
         self.setZValue(1000)
         self.hide()
         self._mouse_press_pos = None
         self._is_moved = False
+        
+        # Dimensions
+        if self.handle_type == 'h_capsule':
+            self.w, self.h = 16, 6
+        elif self.handle_type == 'v_capsule':
+            self.w, self.h = 6, 16
+        else:  # 'circle'
+            self.w, self.h = 7, 7
+            
+        self._pen_color = QColor(28, 126, 214)
+
+    def boundingRect(self):
+        return QRectF(-self.w / 2, -self.h / 2, self.w, self.h)
+
+    def setPen(self, pen):
+        self._pen_color = pen.color()
+        self.update()
+
+    def paint(self, painter, option, widget=None):
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setBrush(QBrush(QColor(255, 255, 255)))
+        painter.setPen(QPen(self._pen_color, 1.5))
+        
+        if self.handle_type == 'circle':
+            painter.drawEllipse(self.boundingRect())
+        else:
+            r = min(self.w, self.h) / 2
+            painter.drawRoundedRect(self.boundingRect(), r, r)
 
     def hoverEnterEvent(self, event):
-        self.setCursor(Qt.SizeAllCursor)
+        self.setCursor(self.cursor_type)
         if hasattr(self.parentItem(), '_hovered'):
             self.parentItem()._hovered = True
             self.parentItem()._update_handle_visibility()
@@ -272,10 +299,18 @@ class RectShape(QGraphicsRectItem, BaseShape):
             self.update_label_text(label)
             self.update_label_position(self)
 
-        self.lt_handle = HandleItem(self)
-        self.rt_handle = HandleItem(self)
-        self.lb_handle = HandleItem(self)
-        self.rb_handle = HandleItem(self)
+        # 4 corners - white circles
+        self.lt_handle = HandleItem(self, Qt.SizeFDiagCursor, 'circle')
+        self.rt_handle = HandleItem(self, Qt.SizeBDiagCursor, 'circle')
+        self.lb_handle = HandleItem(self, Qt.SizeBDiagCursor, 'circle')
+        self.rb_handle = HandleItem(self, Qt.SizeFDiagCursor, 'circle')
+        
+        # 4 edge borders - pill capsule style!
+        self.t_handle = HandleItem(self, Qt.SizeVerCursor, 'h_capsule')
+        self.b_handle = HandleItem(self, Qt.SizeVerCursor, 'h_capsule')
+        self.l_handle = HandleItem(self, Qt.SizeHorCursor, 'v_capsule')
+        self.r_handle = HandleItem(self, Qt.SizeHorCursor, 'v_capsule')
+        
         self.update_handles_pos()
 
     def hoverEnterEvent(self, event):
@@ -300,16 +335,23 @@ class RectShape(QGraphicsRectItem, BaseShape):
                 is_drawing_poly = True
                 
         visible = self.isSelected() or (self._hovered and not is_drawing_poly)
-        for h in [self.lt_handle, self.rt_handle, self.lb_handle, self.rb_handle]:
+        for h in [self.lt_handle, self.rt_handle, self.lb_handle, self.rb_handle,
+                  self.t_handle, self.b_handle, self.l_handle, self.r_handle]:
             h.setVisible(visible)
 
     def update_handles_pos(self):
         self._updating_handles = True
         r = self.rect()
+        # Corners
         self.lt_handle.setPos(r.topLeft())
         self.rt_handle.setPos(r.topRight())
         self.lb_handle.setPos(r.bottomLeft())
         self.rb_handle.setPos(r.bottomRight())
+        # Edges
+        self.t_handle.setPos(r.left() + r.width() / 2, r.top())
+        self.b_handle.setPos(r.left() + r.width() / 2, r.bottom())
+        self.l_handle.setPos(r.left(), r.top() + r.height() / 2)
+        self.r_handle.setPos(r.right(), r.top() + r.height() / 2)
         self._updating_handles = False
 
     def update_from_handle(self, dragged_handle):
@@ -319,7 +361,19 @@ class RectShape(QGraphicsRectItem, BaseShape):
         self._updating_handles = True
         hx, hy = dragged_handle.pos().x(), dragged_handle.pos().y()
 
-        if dragged_handle == self.lt_handle:
+        if dragged_handle == self.t_handle:
+            self.lt_handle.setPos(self.lt_handle.pos().x(), hy)
+            self.rt_handle.setPos(self.rt_handle.pos().x(), hy)
+        elif dragged_handle == self.b_handle:
+            self.lb_handle.setPos(self.lb_handle.pos().x(), hy)
+            self.rb_handle.setPos(self.rb_handle.pos().x(), hy)
+        elif dragged_handle == self.l_handle:
+            self.lt_handle.setPos(hx, self.lt_handle.pos().y())
+            self.lb_handle.setPos(hx, self.lb_handle.pos().y())
+        elif dragged_handle == self.r_handle:
+            self.rt_handle.setPos(hx, self.rt_handle.pos().y())
+            self.rb_handle.setPos(hx, self.rb_handle.pos().y())
+        elif dragged_handle == self.lt_handle:
             self.rt_handle.setPos(self.rt_handle.pos().x(), hy)
             self.lb_handle.setPos(hx, self.lb_handle.pos().y())
         elif dragged_handle == self.rt_handle:
@@ -339,6 +393,7 @@ class RectShape(QGraphicsRectItem, BaseShape):
 
         self.setRect(QRectF(min_x, min_y, max_x - min_x, max_y - min_y))
         self.update_label_position(self)
+        self.update_handles_pos()
         self._updating_handles = False
 
     def itemChange(self, change, value):

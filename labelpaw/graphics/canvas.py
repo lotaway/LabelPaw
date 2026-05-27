@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsRectItem
-from PySide6.QtGui import QPixmap, QPolygonF, QPen, QColor, QBrush
+from PySide6.QtWidgets import QGraphicsScene, QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsPathItem
+from PySide6.QtGui import QPixmap, QPolygonF, QPen, QColor, QBrush, QPainterPath
 from PySide6.QtCore import Qt, QPointF, Signal, QRectF
 from labelpaw.graphics.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, HandleItem, PoseShape
 
@@ -17,6 +17,27 @@ class CanvasMode:
         names = {1: "矩形", 2: "多边形", 3: "关键点", 4: "旋转框"}
         return names.get(mode, "未知")
 
+
+
+def get_shape_scene_path(shape):
+    from labelpaw.graphics.shapes import RectShape, PolyShape, RotatedRectShape, PoseShape, PointShape
+    path = QPainterPath()
+    if isinstance(shape, RectShape):
+        path.addRect(shape.rect())
+        return shape.mapToScene(path)
+    elif isinstance(shape, PolyShape):
+        path.addPolygon(shape.polygon())
+        return shape.mapToScene(path)
+    elif isinstance(shape, RotatedRectShape):
+        path.addRect(QRectF(-shape.box_w/2, -shape.box_h/2, shape.box_w, shape.box_h))
+        return shape.mapToScene(path)
+    elif isinstance(shape, PoseShape):
+        path.addRect(QRectF(-shape.box_w/2, -shape.box_h/2, shape.box_w, shape.box_h))
+        return shape.mapToScene(path)
+    elif isinstance(shape, PointShape):
+        path.addEllipse(shape.rect())
+        return shape.mapToScene(path)
+    return shape.mapToScene(shape.shape())
 
 
 class Canvas(QGraphicsScene):
@@ -154,6 +175,20 @@ class Canvas(QGraphicsScene):
         is_sam_model = getattr(self.sam_client, 'current_model_key', '').startswith('sam')
         if self.sam_enabled and is_sam_model and self.is_inside_image(pt) and self.mode in [CanvasMode.RECT, CanvasMode.POLY,
                                                                            CanvasMode.RBOX]:
+            # 检查鼠标是否在已标注的非临时区域内部，如果是，则跳过 SAM 智能预选推理以提升性能并防止视觉遮挡
+            from labelpaw.graphics.shapes import BaseShape
+            hovering_inside_annotated = False
+            for item in self.items(clamped_pt):
+                if isinstance(item, BaseShape) and not getattr(item, 'is_temp', False):
+                    hovering_inside_annotated = True
+                    break
+            
+            if hovering_inside_annotated:
+                if self.sam_hover_item:
+                    self.removeItem(self.sam_hover_item)
+                    self.sam_hover_item = None
+                return
+
             if self.sam_client:
                 self.sam_client.request_inference(clamped_pt.x(), clamped_pt.y(), is_click=False)
             return
@@ -184,7 +219,7 @@ class Canvas(QGraphicsScene):
             self.update_temp_poly(mouse_pos=clamped_pt)
 
     def handle_sam_result(self, poly_pts, rect_xywh, rect_obb, score, is_click):
-        """处理来自 SAM 后台的推理结果，正确区分矩形、多边形和旋转框"""
+        """处理来自 SAM 后台的推理结果，正确区分矩形、多边形 and 旋转框"""
         # 支持 RBOX
         if not self.sam_enabled or self.mode not in [CanvasMode.RECT, CanvasMode.POLY, CanvasMode.RBOX]:
             return
@@ -205,7 +240,9 @@ class Canvas(QGraphicsScene):
                 shape = RectShape(rect)
                 self.shape_drawn.emit(shape)
             else:
-                self.sam_hover_item = QGraphicsRectItem(rect)
+                path = QPainterPath()
+                path.addRect(rect)
+                self.sam_hover_item = QGraphicsPathItem(path)
                 self.sam_hover_item.setPen(QPen(QColor(0, 255, 0), 2, Qt.DashLine))
                 self.sam_hover_item.setBrush(QBrush(QColor(0, 255, 0, 50)))
                 self.addItem(self.sam_hover_item)
@@ -216,7 +253,9 @@ class Canvas(QGraphicsScene):
                 shape = PolyShape(QPolygonF(qpts))
                 self.shape_drawn.emit(shape)
             else:
-                self.sam_hover_item = PolyShape(QPolygonF(qpts), is_temp=True)
+                path = QPainterPath()
+                path.addPolygon(QPolygonF(qpts))
+                self.sam_hover_item = QGraphicsPathItem(path)
                 self.sam_hover_item.setPen(QPen(QColor(0, 255, 0), 2, Qt.DashLine))
                 self.sam_hover_item.setBrush(QBrush(QColor(0, 255, 0, 50)))
                 self.addItem(self.sam_hover_item)
@@ -230,7 +269,14 @@ class Canvas(QGraphicsScene):
                 shape = RotatedRectShape(cx, cy, w, h, angle)
                 self.shape_drawn.emit(shape)
             else:
-                self.sam_hover_item = RotatedRectShape(cx, cy, w, h, angle, is_temp=True)
+                # 构造旋转矩形在 scene 坐标下的 path
+                temp_rbox = RotatedRectShape(cx, cy, w, h, angle, is_temp=True)
+                local_path = QPainterPath()
+                local_path.addRect(QRectF(-w/2, -h/2, w, h))
+                path = temp_rbox.sceneTransform().map(local_path)
+                self.sam_hover_item = QGraphicsPathItem(path)
+                self.sam_hover_item.setPen(QPen(QColor(0, 255, 0), 2, Qt.DashLine))
+                self.sam_hover_item.setBrush(QBrush(QColor(0, 255, 0, 50)))
                 self.addItem(self.sam_hover_item)
 
     def mousePressEvent(self, event):
