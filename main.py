@@ -1293,6 +1293,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         if current_deleted:
             self.scene.clear_shapes()
+            if self.scene.img_item:
+                self.scene.removeItem(self.scene.img_item)
             self.scene.img_item = None
             self.current_image_path = None
 
