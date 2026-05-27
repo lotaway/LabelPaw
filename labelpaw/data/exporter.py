@@ -2,7 +2,7 @@ import json
 import os
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
-from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
+from labelpaw.graphics.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
 
 
 class Exporter:

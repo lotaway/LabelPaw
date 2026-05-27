@@ -527,7 +527,7 @@ class AnnotationTreeWidget(QWidget):
                 # 点击的是父类别项：检查画布上是否有已选中的图形，如果有则将其类别修改为当前点击的类别
                 cls_name = item.data(0, Qt.UserRole)
                 from PySide6.QtWidgets import QApplication
-                from core.shapes import BaseShape
+                from labelpaw.graphics.shapes import BaseShape
                 for widget in QApplication.topLevelWidgets():
                     if hasattr(widget, 'scene') and widget.scene:
                         scene = widget.scene
@@ -851,7 +851,7 @@ class AnnotationTreeWidget(QWidget):
         return new_icon
 
     def get_shape_info_text(self, idx, shape):
-        from core.shapes import RectShape, PolyShape, RotatedRectShape, PoseShape, PointShape
+        from labelpaw.graphics.shapes import RectShape, PolyShape, RotatedRectShape, PoseShape, PointShape
         if isinstance(shape, PoseShape):
             return f"{idx} {len(shape.kps)} 个关键点"
         elif isinstance(shape, PolyShape):

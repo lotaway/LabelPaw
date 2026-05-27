@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsRectItem
 from PySide6.QtGui import QPixmap, QPolygonF, QPen, QColor, QBrush
 from PySide6.QtCore import Qt, QPointF, Signal, QRectF
-from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, HandleItem, PoseShape
+from labelpaw.graphics.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, HandleItem, PoseShape
 
 
 class CanvasMode:
@@ -128,7 +128,7 @@ class Canvas(QGraphicsScene):
                 items_under_mouse = self.items(pt)
                 hovering_on_shape = False
                 for item in items_under_mouse:
-                    from core.shapes import BaseShape, HandleItem, KeypointHandle
+                    from labelpaw.graphics.shapes import BaseShape, HandleItem, KeypointHandle
                     if isinstance(item, (BaseShape, HandleItem, KeypointHandle)) and not getattr(item, 'is_temp', False):
                         hovering_on_shape = True
                         break
@@ -138,7 +138,7 @@ class Canvas(QGraphicsScene):
                         self.pose_preview_item.hide()
                 else:
                     if not hasattr(self, 'pose_preview_item') or not self.pose_preview_item:
-                        from core.shapes import PoseShape
+                        from labelpaw.graphics.shapes import PoseShape
                         # Create a preview shape centered at 0,0 with default size
                         rect = QRectF(-50, -75, 100, 150)
                         self.pose_preview_item = PoseShape(rect, self.current_pose_template, is_temp=True)
@@ -246,14 +246,14 @@ class Canvas(QGraphicsScene):
         if not is_drawing_poly:
             items = self.items(clamped_pt)
             for item in items:
-                from core.shapes import HandleItem, OBBHandle, KeypointHandle
+                from labelpaw.graphics.shapes import HandleItem, OBBHandle, KeypointHandle
                 if isinstance(item, (HandleItem, OBBHandle, KeypointHandle)) and item.isVisible():
                     if not getattr(item.parentItem(), 'is_temp', False):
                         clicked_item = item
                         break
             if not clicked_item:
                 for item in items:
-                    from core.shapes import BaseShape
+                    from labelpaw.graphics.shapes import BaseShape
                     if isinstance(item, BaseShape):
                         if not getattr(item, 'is_temp', False):
                             clicked_item = item
@@ -276,7 +276,7 @@ class Canvas(QGraphicsScene):
                             item.setSelected(False)
                     
                     # 选中当前被点击的图元（手柄则选中其父级图形）
-                    from core.shapes import HandleItem, OBBHandle, KeypointHandle
+                    from labelpaw.graphics.shapes import HandleItem, OBBHandle, KeypointHandle
                     if isinstance(clicked_item, (HandleItem, OBBHandle, KeypointHandle)):
                         parent = clicked_item.parentItem()
                         if parent:
@@ -314,7 +314,7 @@ class Canvas(QGraphicsScene):
             elif self.mode == CanvasMode.POINT:
                 if self.current_pose_template:
                     # 单击放置骨架模板
-                    from core.shapes import PoseShape
+                    from labelpaw.graphics.shapes import PoseShape
                     rect = QRectF(-50, -75, 100, 150) # 默认大小缩小一半
                     shape = PoseShape(rect, self.current_pose_template)
                     shape.setPos(clamped_pt)
@@ -354,7 +354,7 @@ class Canvas(QGraphicsScene):
         # 由于我们在 mousePressEvent 中先调用 super() 再手动 setSelected(True)，
         # Qt 误认为图形在按下前"已选中"，于是在释放时自动 toggle 取消。
         # 解决方案：在 super() 前快照当前选中的图形，调用 super() 后如果被清空则立即恢复。
-        from core.shapes import BaseShape
+        from labelpaw.graphics.shapes import BaseShape
         selected_before = [item for item in self.selectedItems()
                            if isinstance(item, BaseShape) and not getattr(item, 'is_temp', False)]
 
@@ -400,7 +400,7 @@ class Canvas(QGraphicsScene):
         if not self.is_inside_image(pt): return
 
         for item in self.items(pt):
-            from core.shapes import BaseShape, HandleItem
+            from labelpaw.graphics.shapes import BaseShape, HandleItem
             if getattr(item, 'is_temp', False):
                 continue
             if isinstance(item, BaseShape):

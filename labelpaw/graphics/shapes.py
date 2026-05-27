@@ -354,7 +354,7 @@ class RectShape(QGraphicsRectItem, BaseShape):
         return super().itemChange(change, value)
 
 
-from core.translations import KEYPOINT_TRANSLATIONS
+from labelpaw.config.translations import KEYPOINT_TRANSLATIONS
 
 class KeypointHandle(QGraphicsEllipseItem):
     def __init__(self, index, kp_info, parent):

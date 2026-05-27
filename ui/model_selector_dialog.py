@@ -217,9 +217,9 @@ class ModelSelectorDialog(QDialog):
         # Initialize all_data
         self.all_data = {}
         
-        # 1. Load SAM models from SAM_MODEL_MAP (dynamically scanned in sam_client)
+        # Load SAM models from SAM_MODEL_MAP (dynamically scanned in sam_client)
         try:
-            from core.sam_client import SAM_MODEL_MAP
+            from labelpaw.models.sam_client import SAM_MODEL_MAP
             if SAM_MODEL_MAP:
                 sam_list = []
                 for key, info in SAM_MODEL_MAP.items():
@@ -236,7 +236,7 @@ class ModelSelectorDialog(QDialog):
         except ImportError:
             pass
         
-        # 2. Scan for YOLO weights directories dynamically
+        # Scan for YOLO weights directories dynamically
         if os.path.exists(MODEL_BASE_DIR):
             for item in os.listdir(MODEL_BASE_DIR):
                 item_path = os.path.join(MODEL_BASE_DIR, item)

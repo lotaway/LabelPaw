@@ -13,13 +13,13 @@ from ui.main_window import Ui_MainWindow, TemplateSelectorWidget, FormatSelector
 from ui.template_dialog import SkeletonTemplateDialog
 from ui.model_selector_dialog import ModelSelectorDialog
 from ui.theme import DARK_THEME, LIGHT_THEME
-from core.canvas import Canvas, CanvasMode
-from core.sam_client import SAMClient, SAM_MODEL_MAP
-from core.exporter import Exporter
-from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
-from core.pose_template import TemplateManager
+from labelpaw.graphics.canvas import Canvas, CanvasMode
+from labelpaw.models.sam_client import SAMClient, SAM_MODEL_MAP
+from labelpaw.data.exporter import Exporter
+from labelpaw.graphics.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
+from labelpaw.config.pose_template import TemplateManager
 from utils.message import DialogOver
-from core.yolo_predictor import YoloPredictorWorker
+from labelpaw.models.yolo_predictor import YoloPredictorWorker
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -127,7 +127,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         elif model_info.get("type", "").startswith("yolo"):
             self.sam_client.cleanup()
             self.sam_client.current_model_key = key
-            from core.yolo_predictor import YoloPredictor
+            from labelpaw.models.yolo_predictor import YoloPredictor
             path = model_info.get("path", "")
             if path and os.path.exists(path):
                 try:
@@ -290,7 +290,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Get existing shapes for deduplication
         existing_shapes = []
         for item in self.scene.items():
-            from core.shapes import BaseShape
+            from labelpaw.graphics.shapes import BaseShape
             if isinstance(item, BaseShape) and not getattr(item, 'is_temp', False):
                 existing_shapes.append(item)
             
@@ -544,7 +544,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def undo(self):
         """撤销：多边形绘制中撤销顶点，其他情况撤销整步操作"""
-        from core.canvas import CanvasMode
+        from labelpaw.graphics.canvas import CanvasMode
         # 多边形绘制中：撤销最后一个顶点
         if self.scene.mode == CanvasMode.POLY and len(self.scene.poly_pts) > 0:
             removed_pt = self.scene.poly_pts.pop()
@@ -565,7 +565,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def redo(self):
         """重做：多边形绘制中恢复顶点，其他情况前进一步"""
-        from core.canvas import CanvasMode
+        from labelpaw.graphics.canvas import CanvasMode
         # 多边形绘制中：恢复被撤销的顶点
         if self.scene.mode == CanvasMode.POLY and hasattr(self, '_poly_redo_pts') and self._poly_redo_pts:
             pt = self._poly_redo_pts.pop()
@@ -583,7 +583,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             
     def update_undo_redo_buttons(self):
         """更新撤销和重做按钮的可用状态（含多边形顶点撤销）"""
-        from core.canvas import CanvasMode
+        from labelpaw.graphics.canvas import CanvasMode
         # 撤销可用：有历史状态 或 多边形绘制中有顶点可撤销
         can_undo = len(self.undo_stack) > 1
         if self.scene.mode == CanvasMode.POLY and len(self.scene.poly_pts) > 0:
@@ -1141,7 +1141,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.scene.addItem(shape)
         QApplication.processEvents()
 
-        from core.shapes import PoseShape
+        from labelpaw.graphics.shapes import PoseShape
         if isinstance(shape, PoseShape) and shape.template:
             # 骨架模板自动使用模板标签作为类别，跳过弹窗
             cls_name = shape.template.get("label", shape.template.get("name", "Unknown"))
@@ -1169,7 +1169,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if hasattr(shape, 'update_label_position'):
                 shape.update_label_position(shape)
             
-            from core.shapes import RectShape, PolyShape, RotatedRectShape
+            from labelpaw.graphics.shapes import RectShape, PolyShape, RotatedRectShape
             is_rect_poly_obb = isinstance(shape, (RectShape, PolyShape, RotatedRectShape))
             
             if hasattr(shape, 'update_label_visibility'):
@@ -1221,13 +1221,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def update_annotation_tree(self):
         shapes = []
         for item in self.scene.items():
-            from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
+            from labelpaw.graphics.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
             if isinstance(item, (RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape)) and not getattr(item, 'is_temp', False):
                 shapes.append(item)
         self.classListWidget.update_annotations(shapes)
 
     def sync_selection_to_tree(self):
-        from core.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
+        from labelpaw.graphics.shapes import RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape
         selected_shapes = [item for item in self.scene.selectedItems() if isinstance(item, (RectShape, PolyShape, PointShape, RotatedRectShape, PoseShape)) and not getattr(item, 'is_temp', False)]
         if selected_shapes:
             self.classListWidget.select_item_by_shape(selected_shapes[0])

@@ -709,7 +709,7 @@ for _t in DEFAULT_TEMPLATES:
     normalize_template(_t)
 
 class TemplateManager:
-    def __init__(self, config_dir="core/config"):
+    def __init__(self, config_dir="labelpaw/config/config"):
         self.config_dir = config_dir
         self.templates = []
         if not os.path.exists(self.config_dir):
