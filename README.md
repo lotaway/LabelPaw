@@ -1,58 +1,60 @@
 <div align="center">
   <p>
     <a href="https://github.com/luohuabuxiema/LabelPaw" target="_blank">
-      <img alt="X-AnyLabeling" width="200" src="assets/logo.png"></a>
+      <img alt="LabelPaw" width="200" src="assets/logo.png"></a>
   </p>
   <a href="README.md">English</a> | <a href="README_zh-CN.md">简体中文</a>
 </div>
 
 
 # LabelPaw - Intelligent Image Annotation System (v2.0.0)
-
 ## Foreword
-Defeat AI with AI! Fully automated AI development, 10x efficiency! Because of the need to annotate datasets for a project, I previously used tools like labelme and labelimg. Therefore, I decided to integrate excellent vision models like SAM2, SAM3, and YOLO pose estimation to develop a smarter and more efficient annotation tool. After multiple iterations, the system has welcomed the brand-new **version 2.0.0**!
+Due to the project's need for dataset annotation, I previously used tools like labelme and labelimg. Therefore, I decided to combine excellent computer vision models such as SAM2, SAM3, and YOLO pose estimation to develop a smarter and more efficient annotation tool. After multiple iterations, the system has welcomed its brand-new **v2.0.0 release**!
 
-Source Code: [https://github.com/luohuabuxiema/LabelPaw](https://github.com/luohuabuxiema/LabelPaw)
+Source Code Repository: [https://github.com/luohuabuxiema/LabelPaw](https://github.com/luohuabuxiema/LabelPaw)
 
 ## Changelog
 
-- 2026-05-15: Added keypoint template skeletons for faces, hands, and pedestrians. Supports customizing keypoint templates and connections.
-- 2026-05-14: Added the SAM2.1 model to achieve intelligent point-and-click annotation, and integrated the Ultralytics YOLO model. The YOLO model can be used for intelligent annotation of rectangles, segmentation, keypoints, and OBB (Oriented Bounding Boxes).
-- 2026-05-13: Improved JSON/XML/YOLO format conversion, supported JSON to U-Net Mask conversion, and one-click random dataset splitting.
-- 2026-05-10: Added support for Light and Dark theme modes, providing a more comfortable visual experience.
-- 2026-04-12: Built the foundational intelligent annotation interface based on PySide6 (First Release).
-- 2026-04-10: Integrated the latest generation SAM3, supporting hover preview, single-point rapid contour extraction, and text prompt-based full-image object auto-segmentation.
-- 2026-04-09: Supported Rectangle (Rect), Polygon (Poly), and Point annotation, as well as an original OBB rotation box control handle (supports 360° stepless smooth rotation and slide-to-wall detection).
-- 2026-04-08: Supported native saving of JSON, YOLO (.txt), and XML (Pascal VOC).
+- **2026-05-27**: Removed the class selection dialog and unified class modification and creation within the right-side category history panel. Optimized operations including deleting and hiding specified target boxes in the category tree view.
+- **2026-05-15**: Added keypoint skeleton templates for human faces, hands, and pedestrians. Supports customizing keypoint templates and connectivity lines.
+- **2026-05-14**: Added the SAM2.1 model for intelligent point-click annotation, and integrated the Ultralytics YOLO model. The YOLO model can be used for intelligent annotation of rectangles, segmentations, keypoints, and OBB (Oriented Bounding Boxes).
+- **2026-05-13**: Perfected reciprocal format conversion for JSON/XML/YOLO, supported JSON to U-Net Mask generation, and one-click random dataset splitting.
+- **2026-05-10**: Added support for Light and Dark theme modes, providing a more comfortable visual experience.
+- **2026-04-12**: Built the PySide6-based foundational intelligent annotation interface (First Release).
+- **2026-04-10**: Integrated the next-generation SAM3, supporting hover preview, single-point rapid contour extraction, and text prompt-based full-image target auto-segmentation.
+- **2026-04-09**: Supported Rectangle (Rect), Polygon (Poly), and Point annotation, along with the original OBB rotated box control handle (supporting 360° seamless smooth rotation and slide-to-wall detection).
+- **2026-04-08**: Supported native saving of JSON, YOLO (.txt), and XML (Pascal VOC).
+
 
 ## System Introduction
 
-The system is built on PySide6 and integrates the **SAM2**, **SAM3**, and **Ultralytics YOLO** vision models, which significantly enhances annotation efficiency:
-- **Intelligent Point-and-Click & Prompt Segmentation**: When SAM intelligent annotation is enabled, it supports rapid object extraction in modes like polygon, rectangle, and OBB.
+The system is built based on PySide6 and integrates the **SAM2**, **SAM3**, and **Ultralytics YOLO** vision models, which significantly enhances annotation efficiency:
+- **Intelligent Point-Click & Prompt Segmentation**: When SAM intelligent annotation is enabled, it supports rapid target extraction in polygon, rectangle, and OBB modes.
 - **Keypoint Skeleton Templates & Intelligent Annotation**: A brand-new keypoint module with built-in templates for pedestrians, hands, faces, etc. You can customize keypoint templates for quick annotation, and optionally use the YOLO model for intelligent keypoint detection and automatic connection.
 
-| Feature | Interface Demonstration |
-| --- | --- |
-| Polygon Annotation | ![Polygon Annotation](assets/img_1.png) |
-| OBB Intelligent Annotation | ![OBB Intelligent Annotation](assets/img_2.png) |
-| Rectangle Intelligent Annotation | ![Rectangle Intelligent Annotation](assets/img_3.png) |
-| Keypoint Annotation | ![Keypoint Annotation](assets/img_10.png) |
-| Keypoint Intelligent Annotation | ![Keypoint Intelligent Annotation](assets/img_14.png) |
-| Built-in Keypoint Templates | ![Built-in Keypoint Templates](assets/img_11.png) |
-| Face Keypoint Template | ![Face Keypoint Template](assets/img_13.png) |
-| Hand Keypoint Template | ![Hand Keypoint Template](assets/img_16.png) |
-| Custom Keypoint Template | ![Custom Keypoint Template](assets/img_12.png) |
-| Dark Theme | ![Dark Theme](assets/img_15.png) |
-| Dataset Processing Tool | ![Dataset Processing Tool](assets/img_6.png) |
+| Feature             | Interface Demonstration                                                     |
+| ---------------- | ------------------------------------------------------------ |
+| Polygon Annotation       | ![Polygon](assets/3907465018334ef597d142779b2b8b61-177985711229411.png) |
+| OBB Intelligent Annotation      | ![OBB](assets/52c66efbccbe4c91ba2a334cb9006939-177985711229413.png) |
+| Rectangle Intelligent Annotation     | ![Rectangle](assets/d87d307971c9475182bb7c5a1756aed8-177985711229415.png) |
+| Keypoint Intelligent Annotation   | ![Keypoint](assets/a8a9ebdb1e56464aac57307318446bdc-177985711229417.png) |
+| Hand Keypoint Template   | ![Hand Keypoint](assets/615b3d73adb84378bd87128d5869a316-177985711229419.png) |
+| Built-in Keypoint Templates   | ![Built-in Keypoints](assets/b2540b59b9e34f7491d1499f3d125e76-177985711229421.png) |
+| Face Keypoint Template   | ![Face Keypoints](assets/b2b2aebc9db1438aadb3cafddb48a8f0-177985711229423.png) |
+| Hand Keypoint Template   | ![Hand Keypoints](assets/f22a8de7a22a45aeaf7ecc5dea3809b4-177985711229425.png) |
+| Custom Keypoint Template | ![Custom Keypoints](assets/61f48c4cc9a44bd2980d2aa450c5f616-177985711229427.png) |
+| Dataset Processing Tool   | ![Dataset Tool](assets/f3371af5d6a94f3880e2dcac8bc0b068-177985711229429.png) |
+
+
 
 ## 🙊 Core Features
 
-- **✨ AI Intelligent Assistance (SAM2/SAM3 Driven)**: Hover preview, single-point rapid contour extraction, text prompt-based full-image object auto-segmentation.
-- **🦴 Keypoint Skeleton Templates & Intelligent Annotation (YOLO Driven)**: Supports intelligent annotation for rectangles, segmentation, OBB, and keypoints. Built-in keypoints for pedestrians (17 keypoints), faces (68 keypoints), and hands (21 keypoints). Keypoint annotation supports customized skeleton templates.
-- **📐 Versatile Annotation Modes**: Rectangle (Rect), Polygon (Poly), Point, OBB (Oriented Bounding Box), and Pose (Keypoints).
-- **🔄 Ultimate OBB Interaction**: Rotation box control handle with 360° stepless smooth rotation and slide-to-wall detection.
-- **💾 Multi-Format Conversion & Export**: Native support for saving JSON, YOLO (.txt), XML (Pascal VOC), and one-click generation of U-Net Masks.
-- **🗄️ Dataset Processing Workflow**: Supports proportional splitting of train/val/test sets.
+- **✨ AI Intelligent Assistance (SAM2/SAM3 Driven)**: Hover preview, single-point rapid contour extraction, and text prompt-based full-image target auto-segmentation.
+- **🦴 Keypoint Skeleton Templates & Intelligent Annotation (YOLO Driven)**: Supports intelligent annotation for rectangles, segmentations, OBB, and keypoints. Keypoints feature built-in pedestrian (17 points), face (68 points), and hand (21 points) templates. Keypoint annotation supports custom skeleton templates.
+- **📐 All-round Annotation Modes**: Rectangle (Rect), Polygon (Poly), Point, OBB rotated box, and Keypoint (Pose).
+- **🔄 Ultimate OBB Interaction**: Rotated box control handle with 360° stepless smooth rotation and slide-to-wall detection.
+- **💾 Multi-Format Conversion & Export**: Native support for saving JSON, YOLO (.txt), and XML (Pascal VOC), and one-click generation of U-Net Masks.
+- **🗄️ Dataset Processing Workflow**: Supports train/val/test set random splitting by custom proportions.
 
 ---
 
@@ -64,42 +66,44 @@ Python 3.10+ is recommended.
 
 Create a virtual environment with the following command:
 
-```python
+```bash
 conda create -n py311 python==3.11.5
 ```
-Enter the newly created virtual environment:
+Activate the newly created virtual environment:
 
-```python
+```bash
 conda activate py311 
 ```
 
-First, install the necessary Python dependencies:
 
-Separately install `torch>=2.5.0`. PyTorch official website: [https://pytorch.org/](https://pytorch.org/get-started/previous-versions/?_gl=1*r08hqw*_up*MQ..*_ga*MTg1ODQzMTE5LjE3NzU4ODk5NDI.*_ga_469Y0W5V62*czE3NzU4ODk5NDEkbzEkZzAkdDE3NzU4ODk5NDEkajYwJGwwJGgw/)
-![PyTorch Install](assets/d5d10831b3184dfb83fba9ea8166bb7b.png)
+First, install the necessary PyTorch dependency:
 
-**💡 PyTorch Installation Notes (Must Read for Beginners)**
+Install `torch>=2.5.0` separately. PyTorch official website: [https://pytorch.org/](https://pytorch.org/get-started/previous-versions/?_gl=1*r08hqw*_up*MQ..*_ga*MTg1ODQzMTE5LjE3NzU4ODk5NDI.*_ga_469Y0W5V62*czE3NzU4ODk5NDEkajYwJGwwJGgw/)
+![PyTorch Website](assets/d5d10831b3184dfb83fba9ea8166bb7b.png)
 
-Before installing PyTorch, please verify the following points to avoid runtime errors after installation:
+**💡 PyTorch Installation Guidelines (Must-read for beginners)**
 
-**1. Confirm GPU Support and CUDA Version (Extremely Important)**
-* **Applicable System**: This tutorial is based on the Windows environment.
-* **How to Check**: Press `Win + R`, type `cmd` to open the command prompt, type `nvidia-smi`, and press Enter. In the top right corner of the table that appears, look for the **CUDA Version**.
-![CUDA Version](assets/984f810aeee94916a5ef87ba8739d4d9.png)
+Please verify the following key points before installing PyTorch to avoid post-installation runtime errors:
 
-* **Version Matching Requirement**: The PyTorch CUDA version you download (e.g., `cu118` or `cu116` in the command) **must be less than or equal to** the CUDA Version you just found on your computer. If your computer does not have a dedicated NVIDIA card, or if you cannot find this information, please choose the **CPU version** installation command on the official website.
+**1. Confirm Graphics Card Support and CUDA Version (Extremely Important)**
+* **Applicable OS**: This tutorial is based on the Windows environment.
+* **How to Check**: Press `Win + R` keys, type `cmd` to open the command prompt, type `nvidia-smi`, and press Enter. In the top right corner of the displayed table, find the **CUDA Version**.
+![nvidia-smi](assets/984f810aeee94916a5ef87ba8739d4d9.png)
 
-**2. Choose Either Conda or Pip Command**
+* **Version Matching Requirement**: The PyTorch CUDA version you download (such as `cu118` or `cu121` in the command) **must be less than or equal to** the CUDA Version shown on your computer. If your computer does not have a dedicated NVIDIA GPU, or if you cannot find this info, please choose the **CPU version** command from the official website.
 
-Install the specified version based on your computer. The installation command is as follows. If the `conda` command gets stuck, you can try configuring domestic mirrors (Tsinghua/USTC) in the terminal first, and then remove `-c pytorch -c nvidia` at the end of the command (because adding `-c` forces the download from the official foreign channels):
+
+**2. Choose either Conda or Pip Command**
+
+Install the specified version based on your computer. If the `conda` command gets stuck, you can try configuring domestic mirrors (Tsinghua/USTC) in the terminal first, and then remove `-c pytorch -c nvidia` at the end of the command (since `-c` forces the download from official foreign channels):
 
 ```bash
 conda install pytorch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0  pytorch-cuda=11.8 -c pytorch -c nvidia
 ```
 
-The above command usually fails to install. Therefore, it is recommended to use the Alibaba Cloud mirror source for installation. The `whl` packages for the PyTorch GPU version on Alibaba Cloud can be viewed here: [https://mirrors.aliyun.com/pytorch-wheels](https://mirrors.aliyun.com/pytorch-wheels/)
+The above command usually fails to install in most cases. Therefore, it is highly recommended to use the Alibaba Cloud wheels mirror. The `whl` packages for PyTorch GPU can be viewed at: [https://mirrors.aliyun.com/pytorch-wheels/](https://mirrors.aliyun.com/pytorch-wheels/)
 
-The `cu` version at the end needs to correspond to the CUDA version number. For example, to install CUDA 11.8, write `cu118`.
+The `cu` version at the end must correspond to your CUDA version (e.g., `cu118` for CUDA 11.8).
 
 ```bash
 -f  https://mirrors.aliyun.com/pytorch-wheels/cu118
@@ -109,12 +113,13 @@ CUDA 11.8 Installation Command:
 pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 -f  https://mirrors.aliyun.com/pytorch-wheels/cu118
 ```
 CUDA 12.1 Installation Command:
+
 ```bash
 pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 -f  https://mirrors.aliyun.com/pytorch-wheels/cu121
 ```
 
 **3. Verify Installation**
-After the installation progress bar is completed, do not rush to close the window! Enter `python` in the terminal and type the following code:
+After the installation completes, check if PyTorch is running properly. In the terminal, type `python` and execute the following:
 ```python
 import torch
 print(torch.__version__)
@@ -122,13 +127,13 @@ print(torch.cuda.is_available())
 print(torch.cuda.device_count())
 print(f"CUDA: {torch.version.cuda}")
 ```
-If it outputs `True`, congratulations, CUDA is available! If it outputs `False`, it means the CPU version was installed or there is a CUDA mismatch, which may require uninstallation and reinstallation.
+If it outputs `True`, congratulations, CUDA is successfully configured! If it outputs `False`, it means PyTorch was installed in CPU-only mode or your CUDA version is mismatched, which requires uninstallation and reinstallation.
 
 ---
 
-Afterwards, in your virtual environment, use the following command to install the required libraries:
+After configuring PyTorch, run the following command in your virtual environment to install other required packages:
 
-```
+```bash
 pip install -r requirements.txt
 ```
 ```python
@@ -157,57 +162,57 @@ git+https://github.com/facebookresearch/sam2.git
 ultralytics==8.4.49
 ```
 
-> Note: If you want to use the intelligent assistance feature, please ensure that the libraries related to `sam3`, `sam2`, and `ultralytics` along with their dependencies are correctly configured in your environment. If the above installation of `sam3`, `sam2`, or `ultralytics` fails, there is also a source code installation tutorial below.
+> Note: To use the AI intelligent annotation assistant, please make sure `sam3`, `sam2`, and `ultralytics` libraries along with their dependencies are correctly configured. If installing `sam3`, `sam2`, or `ultralytics` fails via pip, you can also install them using source code as detailed below.
 
-#### Errors Encountered During Installation
+#### Troubleshooting Common Installation Errors
 
-(1) Could not create the virtual environment, error reported as follows:
-![Virtual Env Error](assets/eab21eb3721f45cf87d161c782afc73f.png)
+**(1) Environment creation fails, reporting issues:**
+![Conda Error](assets/eab21eb3721f45cf87d161c782afc73f.png)
 
-Solution: Go to `C:\Users\YourUser` and delete the `.condarc` file.
+* **Solution**: Go to `C:\Users\YourUsername` and delete the `.condarc` file.
 
-(2) Error: `ModuleNotFoundError: No module named 'pkg_resources'`
+**(2) Error `ModuleNotFoundError: No module named 'pkg_resources'`:**
+
 ![pkg_resources Error](assets/45b21e1d50fc4853978617234eec5d32.png)
 
-Solution: Downgrade the `setuptools` library version. The version I installed is 79.0.1.
+* **Solution**: Downgrade the `setuptools` version. Set it explicitly to `79.0.1`:
 
-```python
+```bash
 pip install setuptools==79.0.1
 ```
-![setuptools Install](assets/c673e9d646bc4e0989cfe40a432c2adf.png)
+![setuptools Installation](assets/c673e9d646bc4e0989cfe40a432c2adf.png)
 
-Reference Link: [https://blog.csdn.net/u014451778/article/details/158469881](https://blog.csdn.net/u014451778/article/details/158469881/)
+Reference: [https://blog.csdn.net/u014451778/article/details/158469881](https://blog.csdn.net/u014451778/article/details/158469881/)
 
-(3) Error: `ModuleNotFoundError: No module named 'triton'`
-![triton Error](assets/d4b99849318740f0b1a40cfa857af640.png)
+**(3) Error `ModuleNotFoundError: No module named 'triton'`:**
+![Triton Error](assets/d4b99849318740f0b1a40cfa857af640.png)
 
-Solution: Download the offline installation package and install it separately.
+* **Solution**: Download the offline installation wheels package for Windows and install separately.
+* **Triton offline wheels download path**: [https://hf-mirror.com/madbuda/triton-windows-builds](https://hf-mirror.com/madbuda/triton-windows-builds/)
 
-Triton offline installation package download address: [https://hf-mirror.com/madbuda/triton-windows-builds](https://hf-mirror.com/madbuda/triton-windows-builds/)
+![Triton Downloads](assets/404ac26c33944f0f9bcfe727dbfd501c.png)
 
-![triton Download](assets/404ac26c33944f0f9bcfe727dbfd501c.png)
-
-Reference Link: [https://blog.csdn.net/qq_42910179/article/details/155606159](https://blog.csdn.net/qq_42910179/article/details/155606159/)
+Reference: [https://blog.csdn.net/qq_42910179/article/details/155606159](https://blog.csdn.net/qq_42910179/article/details/155606159/)
 
 ### 2. Source Code Installation for SAM3, SAM2, and Ultralytics
 
-To ensure that SAM2, SAM3, and Ultralytics (YOLO) work properly, you need to go to their official repositories to download the source code and place it in the `LabelPaw` root directory. Because the official libraries are constantly updating, using the source code method maximizes compatibility.
+To ensure that SAM2, SAM3, and Ultralytics (YOLO) work optimally, you can download their source code from the official repositories and place them in the `LabelPaw` root directory. Since official libraries are constantly updating, the source code method guarantees the best compatibility.
 
-**Official Source Code Addresses**:
+**Official Repositories**:
 
 - **SAM2**: [https://github.com/facebookresearch/sam2](https://github.com/facebookresearch/sam2)
 - **SAM3**: [https://github.com/facebookresearch/sam3](https://github.com/facebookresearch/sam3)
 - **Ultralytics (YOLO)**: [https://github.com/ultralytics/ultralytics](https://github.com/ultralytics/ultralytics)
 
-**Steps**:
+**Manual Steps**:
 
-1. Visit the GitHub addresses above, click the green **Code** button, and select **Download ZIP**.
-2. Unzip the downloaded files.
-3. **Important**: The unzipped folders often contain documents, test cases, and many other files. You only need the **core code folder** inside the unzipped directory (after downloading, you will see folders named `sam2`, `sam3`, and `ultralytics`).
-4. Paste these three folders (`sam2`, `sam3`, `ultralytics`) directly into the root directory of `LabelPaw`.
+1. Click the green **Code** button and select **Download ZIP** on the respective GitHub page.
+2. Unzip the downloaded zip file.
+3. **Important**: The unzipped packages contain documents, tests, and many extra files. You only need the **core code directory** (the inner folder named exactly `sam2`, `sam3`, or `ultralytics`).
+4. Copy these three core code folders (`sam2`, `sam3`, `ultralytics`) and paste them directly into the root directory of `LabelPaw`.
 
-**Direct Installation via Command Line (Optional, Recommended for Advanced Users)**:
-If you do not want to download and copy folders manually, you can use pip to install directly from the GitHub source or PyPI:
+**Installation via command line (Optional, recommended for advanced users)**:
+If you do not want to download and copy folders manually, you can use pip to install directly from the Git source:
 
 ```bash
 # Install SAM2
@@ -216,69 +221,68 @@ pip install git+https://github.com/facebookresearch/sam2.git
 # Install SAM3
 pip install git+https://github.com/facebookresearch/sam3.git
 
-# Install Ultralytics
+# Install Ultralytics (YOLO)
 pip install ultralytics
 ```
 
-> ⚠️ **Notes on the `git+` Installation Method**:
-> 1. **Git Required**: Your computer must have [Git](https://git-scm.com/) installed and configured in advance, otherwise the command will fail directly.
-> 2. **Network Issues in China**: Because GitHub access is unstable in some parts of China, using `git+https://...` can easily result in a `Time out` or connection failure. For users in China, it is recommended to:
->    - Use a VPN (scientific internet access) and temporarily set a Git proxy in the command line.
->    - Or preferentially use the **official source code download and unzip** method above, as this is the safest way.
+> ⚠️ **Notes for `git+` installation method**:
+> 1. **Git required**: Your system must have [Git](https://git-scm.com/) installed and configured in your environment PATH, otherwise the command will fail.
+> 2. **Network connectivity**: Due to GitHub instability in some regions, using `git+https://...` may encounter connection timeouts. We suggest users configure a command-line proxy or preferentially use the **manual ZIP download and unzip** method above, which is the most reliable.
 
-### 3. Model Download & Configuration Modification
+### 3. Model Download & Path Configuration
 
-**Model Download and Storage Instructions**:
+**Model Download & Directory Structure**:
 
-To enable intelligent annotation, you need to download the corresponding weight files (`.pt`) and organize them according to the standard directory structure.
+To enable intelligent annotation features, you need to download corresponding weight files (`.pt`) and organize them under a standard directory layout.
 
-**1. Recommended Model Storage Directory Structure**
-It is recommended to organize your model files locally according to the following structure:
+**1. Recommended Model Directory Structure**
+Please set up your model folders under the project root exactly as follows:
 ```text
  weights/
-      ├── sam_weights/          <-- Store all SAM series models (Must be named this way)
+      ├── sam_weights/          <-- Stores all Segment Anything (SAM) models (must be named exactly this way)
       │    ├── sam3.pt
       │    ├── sam2.1_hiera_tiny.pt
       │    └── ...
-      ├── yolo26_weights/       <-- Store YOLO26 series models
+      ├── yolo26_weights/       <-- Stores YOLO26 models
       │    ├── yolo26n-pose.pt
       │    └── ...
-      ├── yolov8_weights/       <-- You can also create other YOLO version folders yourself
+      ├── yolov8_weights/       <-- You can also create other YOLO model directories
       │    ├── yolov8n.pt
       │    └── ...
       └── ...
 ```
 
-**2. SAM Series Model Download and Storage**
+**2. SAM Model Download & Setup**
 
-- **SAM 3 Model (3.5 GB)**: Go to the official GitHub repository or HuggingFace and search for `sam3`. Store it in `\weights\sam_weights\sam3.pt`.
+- **SAM 3 Model (3.5 GB)**: Download `sam3.pt` from the official repository or HuggingFace. Store it under `\weights\sam_weights\sam3.pt`.
 - **SAM 2.1 Models**:
   - SAM 2.1 Tiny: [https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt)
   - SAM 2.1 Small: [https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt)
   - SAM 2.1 Base: [https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt)
   - SAM 2.1 Large: [https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt)
-  - Storage Location: `\weights\sam_weights\` directory (Please keep the default file names).
+  - Place them directly under `\weights\sam_weights\` (keep default filenames).
 
-**3. YOLO Series Model Download and Storage**
-- **YOLO Models**: Go to the YOLO official GitHub or the corresponding framework page to download the latest weights (e.g., yolov8, yolo11, yolo26, etc.). For pose estimation, it is recommended to download models with the `-pose` suffix (e.g., `yolo26n-pose.pt`).
-- **Storage Location**: Store them in the corresponding folder, like `\weights\yolo26_weights\`. *(Note: You can also place your own trained YOLO models in the corresponding folder, and the software will automatically read them!)*
+**3. YOLO Model Download & Setup**
+- **YOLO Models**: Download latest weights (YOLOv8, YOLO11, YOLOv26, etc.) from the official repository. For Pose Estimation, download pose-specific models (such as `yolo26n-pose.pt`).
+- **Place them** in the corresponding folder, e.g., `\weights\yolo26_weights\`. *(Note: You can place any custom-trained YOLO model here and the software will scan and load it automatically!)*
 
-**Model Path Modification Instructions**:
-In order for the system to find the models you downloaded:
+**Modifying Model Base Path**:
+For the system to detect your weights, you have two options:
 
-> Method 1: Create a `weights` folder in the project root directory to store the models. See the structure above.
+> **Option 1**: Create a folder named `weights` directly in the project root directory, and place models inside following the structure above.
 
-> Method 2: Create a `weights` folder elsewhere to store the models. See the structure above. You **only** need to modify one base path variable in the code:
-Open `main.py`, `core/sam_client.py`, and `ui/model_selector_dialog.py`, find the `HARDCODED_DEV_DIR` variable, and uniformly change it to the absolute path of your local `weights` folder: **HARDCODED_DEV_DIR= r"Your Absolute Path\weights"**
+> **Option 2**: Create a `weights` folder elsewhere on your system. **Only** change one base path variable in the codebase:
+> Open `main.py`, `core/sam_client.py`, and `ui/model_selector_dialog.py`, find the `HARDCODED_DEV_DIR` variable, and change it to your local absolute path: **`HARDCODED_DEV_DIR = r"YourAbsolutePath\weights"`**
 
-*(Note: The system will automatically scan all subfolders shaped like `yolo*_weights` under this directory and load the YOLO models. Therefore, you just need to place the models, and there is no need to manually specify the YOLO subdirectories!)*
 
-**[Special Note: Advice for Users Without a Dedicated GPU]**
-If your computer does not have a dedicated graphics card (GPU) or has low specs, it is strongly recommended that you prioritize using YOLO series models (like the lightweight models with "n" or "s"). SAM series models, even the tiny version, are relatively heavy, and running them in a pure CPU environment may cause severe lag or lead to the software becoming unresponsive. Lightweight YOLO models can maintain good processing speeds even on a CPU.
+*(Note: The system dynamically scans all folders matching `yolo*_weights` in the directory, so you just need to drop the weights inside the directory without any extra manual configuration!)*
 
-### 4. Start the System
+**【特别说明：无显卡(GPU)用户的建议】**
+如果您的电脑没有独立显卡（GPU）或者配置较低，强烈建议您优先使用 YOLO 系列模型（如带有 "n" 或 "s" 的轻量级模型）。SAM 系列模型即使是 tiny 版本也相对较重，在纯 CPU 环境下运行可能会非常卡顿或导致软件未响应，而 YOLO 轻量级模型在 CPU 上也能保持不错的处理速度。
 
-After all configurations are complete, run the following in the root directory:
+### 4. Start the Application
+
+Once everything is configured, run the application from the root directory:
 ```bash
 python main.py
 ```
@@ -289,44 +293,44 @@ python main.py
 
 ### 📋 Basic Workflow
 
-1. **Open Directory**: Click "Open Directory" to select the image folder.
-2. **Select Format**: In the left dropdown menu, select the save format (JSON / YOLO / XML).
-3. **Annotation Mode**: Select the left toolbar for rectangle, keypoint, OBB, or polygon annotation mode, or use keyboard shortcuts.
-4. **Intelligent Annotation**: Turn on **SAM Intelligent Assistance** at the bottom left (Shortcut: Q). SAM3/SAM2 supports hover preview and point-and-click. The SAM3 model supports text prompt annotation. You can select other models in the top toolbar or use YOLO intelligent pre-inference for annotation.
-5. **Keypoint/Skeleton Annotation**: After selecting the keypoint annotation mode, you can choose built-in keypoint skeleton templates in the top toolbar. Currently, the built-in skeleton templates include faces, hands, and pedestrians. You can also use YOLO intelligent pre-inference or customize keypoint skeleton templates.
-6. **Dataset Processing**: Click "Dataset Conversion" on the toolbar to execute format conversion, U-Net Mask generation, and train/val dataset splitting.
+1. **Open Directory**: Click "Open Directory" to select your image folder.
+2. **Select Format**: In the left dropdown menu, select your export format (JSON / YOLO / XML).
+3. **Annotation Mode**: Select a mode on the left toolbar (Rectangle, Keypoint, OBB, or Polygon) or use the keyboard shortcuts.
+4. **Intelligent Annotation**: Enable **SAM Intelligent Assistant** (Shortcut: Q). SAM3/SAM2 models support hover preview and point-click; SAM3 also supports text prompt segmentations. You can switch models on the top toolbar or trigger YOLO pre-inference.
+5. **Keypoint/Skeleton Annotation**: In Keypoint mode, you can select built-in templates (face, hand, pedestrian) from the top toolbar, customize your own templates, or trigger YOLO pose pre-inference.
+6. **Dataset Processing**: Click "Dataset Tool" on the toolbar to perform format conversions, U-Net Mask generation, and train/val/test random splitting.
 
-### ⌨️ Shortcut Keys
+### ⌨️ Keyboard Shortcuts
 
-- **A / Left Arrow**: Previous Image
-- **D / Right Arrow**: Next Image
-- **Ctrl + S**: Manually save the current annotation
-- **Q**: Toggle SAM Intelligent Assistance On/Off
-- **R**: Rectangle Annotation (Rect)
-- **P**: Polygon Annotation (Poly)
-- **O**: Oriented Bounding Box Annotation (OBB)
-- **T**: Keypoint Annotation (Pose/Point)
-- **M**: Use YOLO model for inference (Requires intelligent assistance to be on and the corresponding model to be loaded)
-- **E**: Modify the current selected label category
-- **Del / Backspace**: Delete selected annotation box/point
-- **Ctrl + Z**: Undo (Supports 20 steps)
+- **A / Left Arrow**: Previous image
+- **D / Right Arrow**: Next image
+- **Ctrl + S**: Save current annotations manually
+- **Q**: Toggle SAM Intelligent Assistant On/Off
+- **R**: Switch to Rectangle mode (Rect)
+- **P**: Switch to Polygon mode (Poly)
+- **O**: Switch to Rotated Box mode (OBB)
+- **T**: Switch to Keypoint/Skeleton mode (Pose)
+- **M**: Trigger YOLO model pre-inference (requires model to be loaded)
+- **E**: Modify category label of the selected shape
+- **Del / Backspace**: Delete selected shape/point
+- **Ctrl + Z**: Undo (supports 20 steps)
 - **Ctrl + Y (or Ctrl + Shift + Z)**: Redo
-- **Z / X / C / V**: OBB rotation box quick fine-tuning angle
+- **Z / X / C / V**: Fine-tune OBB rotated box angles
 
 ---
 
 ## 🤝 Secondary Development Welcome
 
-The system uses a modular design with high cohesion and low coupling. The frontend UI is separated from the underlying model inference.
-- `main.py`: Main control interface and event routing.
-- `core/`: Core drawing (`canvas.py`), data export (`exporter.py`), SAM inference (`sam_client.py`), YOLO inference (`yolo_predictor.py`).
-- `ui/`: Graphical components and theme customization.
+The application features a modular design with high cohesion and low coupling. UI and model inference are separated cleanly:
+- `main.py`: Main control window and event router.
+- `core/`: Core draw canvas (`canvas.py`), data export (`exporter.py`), SAM client (`sam_client.py`), and YOLO predictor (`yolo_predictor.py`).
+- `ui/`: Custom widgets and theme styles.
 
-Developers are welcome to Fork and submit PRs!
+We welcome developers to Fork the repository and submit PRs!
 
 ## License
 
-This project is licensed under the GPL-3.0 License. If you use this code in commercial or non-commercial projects, please comply with this license and open source your derivative modifications. Thank you for your support, and if this helps, please give the repository a Star!
+This project is licensed under the GPL-3.0 License. If you utilize this code in commercial or non-commercial projects, please comply with this license and open-source your derivative modifications. If this project helps you, please star our repository!
 
 ## Citation
 
@@ -343,7 +347,7 @@ If you use this software in your research, please cite as follows:
 }
 ```
 
-**Acknowledgments and Reference Model Citations**:
+**Acknowledgments and References**:
 
 ```bibtex
 @misc{carion2025sam3segmentconcepts,
