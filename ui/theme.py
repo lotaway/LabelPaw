@@ -136,6 +136,9 @@ QLabel { color: #cbd5e1; background: transparent; }
     background-color: #0F172A;
     border-left: 1px solid #334155;
 }
+#classesContainer, #filesContainer, #samTextGroup, #rightSplitter {
+    background-color: transparent;
+}
 #rightPanelTitle {
     color: #F8FAFC;
     padding: 4px 0px;
@@ -515,6 +518,9 @@ QLabel { color: #334155; background: transparent; }
 #rightPanel {
     background-color: #FFFFFF;
     border-left: 1px solid #E5E5E5;
+}
+#classesContainer, #filesContainer, #samTextGroup, #rightSplitter {
+    background-color: transparent;
 }
 #rightPanelTitle {
     color: #0F172A;

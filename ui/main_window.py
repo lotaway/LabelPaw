@@ -584,6 +584,7 @@ class Ui_MainWindow(object):
 
         # Container for classes
         self.classesContainer = QWidget()
+        self.classesContainer.setObjectName("classesContainer")
         classesLayout = QVBoxLayout(self.classesContainer)
         classesLayout.setContentsMargins(0, 0, 0, 8)
         self.labelClasses = QLabel("历史类别:")
@@ -594,6 +595,7 @@ class Ui_MainWindow(object):
 
         # Container for files
         self.filesContainer = QWidget()
+        self.filesContainer.setObjectName("filesContainer")
         filesLayout = QVBoxLayout(self.filesContainer)
         filesLayout.setContentsMargins(0, 0, 0, 0)
         self.labelFiles = QLabel("文件列表:")
@@ -615,6 +617,7 @@ class Ui_MainWindow(object):
 
         # ==== 右下角区域 ====
         self.samTextGroup = QWidget()
+        self.samTextGroup.setObjectName("samTextGroup")
         textLayout = QVBoxLayout(self.samTextGroup)
         textLayout.setContentsMargins(0, 5, 0, 15)
         textLayout.setSpacing(8)

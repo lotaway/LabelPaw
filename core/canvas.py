@@ -300,7 +300,10 @@ class Canvas(QGraphicsScene):
                 for item in self.selectedItems():
                     item.setSelected(False)
                 # 如果是点击空白处退出编辑模式，我们不应该继续向下执行绘制新图形的逻辑
-                return
+                # 改动逻辑：仅在非矩形、非多边形、非OBB旋转框模式下才提前返回。
+                # 在这些标注模式下，点击空白处可以直接开始绘制，无需额外点击一次来清除选中。
+                if self.mode not in [CanvasMode.RECT, CanvasMode.POLY, CanvasMode.RBOX]:
+                    return
 
         # ---------------- 常规绘图起点 ----------------
         if not self.is_inside_image(pt) and not self.drawing: return
