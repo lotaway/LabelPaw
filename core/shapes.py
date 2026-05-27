@@ -85,14 +85,32 @@ class BaseShape:
             if scene and getattr(scene, 'mode', None) == 2:  # CanvasMode.POLY
                 if len(getattr(scene, 'poly_pts', [])) > 0:
                     return
-            item.setBrush(self.hover_brush)
+            if not item.isSelected():
+                item.setZValue(50.0)
+            if hasattr(item, 'setBrush'):
+                item.setBrush(self.hover_brush)
+            elif hasattr(item, 'rect_item') and hasattr(item.rect_item, 'setBrush'):
+                c = getattr(item, '_base_color', None)
+                if c:
+                    item.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 120)))
+                else:
+                    item.rect_item.setBrush(self.hover_brush)
             item.setCursor(Qt.PointingHandCursor)
             if scene and hasattr(scene, 'canvas_item_hovered'):
                 scene.canvas_item_hovered.emit(item, True)
 
     def apply_hover_leave(self, item):
         if not getattr(item, 'is_temp', False):
-            item.setBrush(self.normal_brush)
+            if not item.isSelected():
+                item.setZValue(0.0)
+            if hasattr(item, 'setBrush'):
+                item.setBrush(self.normal_brush)
+            elif hasattr(item, 'rect_item') and hasattr(item.rect_item, 'setBrush'):
+                c = getattr(item, '_base_color', None)
+                if c:
+                    item.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 50)))
+                else:
+                    item.rect_item.setBrush(self.normal_brush)
             item.setCursor(Qt.ArrowCursor)
             scene = item.scene()
             if scene and hasattr(scene, 'canvas_item_hovered'):
@@ -328,6 +346,7 @@ class RectShape(QGraphicsRectItem, BaseShape):
             return super().itemChange(change, clamp_item_position(self, value))
 
         if change == QGraphicsItem.ItemSelectedHasChanged:
+            self.setZValue(100.0 if self.isSelected() else 0.0)
             self._update_handle_visibility()
             self.update_label_visibility(self, is_selected=self.isSelected(), is_hovered=self._hovered)
         elif change == QGraphicsItem.ItemPositionHasChanged:
@@ -806,12 +825,14 @@ class PoseShape(QGraphicsObject, BaseShape):
         self._hovered = state
         if not self.isSelected():
             if state:
+                self.setZValue(50.0)
                 # 未选中时，靠近骨架线/关键点显示手指光标，提示可点击进入编辑
                 self.setCursor(Qt.PointingHandCursor)
                 # 悬停显示浅绿色虚线提示框
                 self.rect_item.setPen(QPen(QColor(50, 255, 50, 150), 2, Qt.DashLine))
                 self.rect_item.show()
             else:
+                self.setZValue(0.0)
                 self.unsetCursor()
                 self.rect_item.setPen(QPen(Qt.NoPen))
                 self.rect_item.hide()
@@ -864,6 +885,7 @@ class PoseShape(QGraphicsObject, BaseShape):
         if change == QGraphicsItem.ItemPositionChange and not getattr(self, 'is_temp', False) and not getattr(self, '_is_resizing', False):
             return super().itemChange(change, clamp_item_position(self, value, overflow_ratio=0.5))
         if change == QGraphicsItem.ItemSelectedHasChanged:
+            self.setZValue(100.0 if self.isSelected() else 0.0)
             self.set_hover_state(getattr(self, '_hovered', False))
         elif change == QGraphicsItem.ItemPositionHasChanged:
             if not self.is_temp:
@@ -1059,6 +1081,7 @@ class PolyShape(QGraphicsPolygonItem, BaseShape):
 
         if not self.is_temp:
             if change == QGraphicsItem.ItemSelectedHasChanged:
+                self.setZValue(100.0 if self.isSelected() else 0.0)
                 self._update_handle_visibility()
                 self.update_label_visibility(self, is_selected=self.isSelected(), is_hovered=self._hovered)
                 if not self.isSelected():
@@ -1357,6 +1380,8 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
                 is_drawing_poly = True
                 
         if not is_drawing_poly:
+            if not self.isSelected():
+                self.setZValue(50.0)
             c = self._base_color
             self.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 120)))
             if scene and hasattr(scene, 'canvas_item_hovered'):
@@ -1366,6 +1391,8 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
 
     def hoverLeaveEvent(self, event):
         self._hovered = False
+        if not self.isSelected():
+            self.setZValue(0.0)
         c = self._base_color
         self.rect_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 50)))
         self._update_handle_visibility()
@@ -1397,6 +1424,7 @@ class RotatedRectShape(QGraphicsObject, BaseShape):
                 return QPointF(valid_x, valid_y)
 
         if change == QGraphicsItem.ItemSelectedHasChanged:
+            self.setZValue(100.0 if self.isSelected() else 0.0)
             self._update_handle_visibility()
         elif change == QGraphicsItem.ItemPositionHasChanged:
             self.update_label_position(self)

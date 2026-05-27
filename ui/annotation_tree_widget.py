@@ -860,7 +860,7 @@ class AnnotationTreeWidget(QWidget):
             w = int(shape.box_w)
             h = int(shape.box_h)
             angle = int(shape.rotation())
-            return f"{idx} {w} x {h} @{angle}度"
+            return f"{idx} {w} x {h} @{angle}°"
         elif isinstance(shape, RectShape):
             r = shape.rect()
             w = int(r.width())
