@@ -330,7 +330,7 @@ python main.py
 
 系统采用模块化设计，高内聚低耦合，前端 UI 与底层模型推理分离。
 - `main.py`：主控界面与事件路由。
-- `core/`：核心绘图 (`canvas.py`)、数据导出 (`exporter.py`)、SAM 推理 (`sam_client.py`)、YOLO 推理 (`yolo_predictor.py`)。
+- `核心绘图 (`canvas.py`)、数据导出 (`exporter.py`)、SAM 推理 (`sam_client.py`)、YOLO 推理 (`yolo_predictor.py`)。
 - `ui/`：图形化组件与主题定制。
 
 欢迎广大开发者 Fork 并提交 PR！

@@ -323,7 +323,7 @@ python main.py
 
 The application features a modular design with high cohesion and low coupling. UI and model inference are separated cleanly:
 - `main.py`: Main control window and event router.
-- `core/`: Core draw canvas (`canvas.py`), data export (`exporter.py`), SAM client (`sam_client.py`), and YOLO predictor (`yolo_predictor.py`).
+- Core draw canvas (`canvas.py`), data export (`exporter.py`), SAM client (`sam_client.py`), and YOLO predictor (`yolo_predictor.py`).
 - `ui/`: Custom widgets and theme styles.
 
 We welcome developers to Fork the repository and submit PRs!
