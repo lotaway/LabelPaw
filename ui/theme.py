@@ -65,7 +65,6 @@ QListWidget::item:hover { background-color: #1E293B; }
 QListWidget::item:selected {
     background-color: #1E293B;
     color: #22C55E;
-    border-left: 4px solid #22C55E;
 }
 QListWidget QLineEdit {
     background-color: #1E293B;
@@ -136,7 +135,7 @@ QLabel { color: #cbd5e1; background: transparent; }
     background-color: #0F172A;
     border-left: 1px solid #334155;
 }
-#classesContainer, #filesContainer, #samTextGroup, #rightSplitter {
+#classesContainer, #filesContainer, #samTextGroup, #rightSplitter, #filesHeader {
     background-color: transparent;
 }
 #rightPanelTitle {
@@ -381,6 +380,37 @@ QLabel { color: #cbd5e1; background: transparent; }
     background-color: #1E293B;
     color: #22C55E;
 }
+QCheckBox {
+    spacing: 5px;
+    font-size: 13px;
+    font-weight: 500;
+}
+QCheckBox::indicator, QListWidget::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid #475569;
+    border-radius: 3px;
+    background-color: #0F172A;
+}
+QCheckBox::indicator:hover, QListWidget::indicator:hover {
+    border-color: #22C55E;
+}
+QCheckBox::indicator:checked, QListWidget::indicator:checked {
+    border-color: #22C55E;
+    background-color: #22C55E;
+    image: url(ui/icon/check.svg);
+}
+QCheckBox::indicator:indeterminate, QListWidget::indicator:indeterminate {
+    border-color: #22C55E;
+    background-color: #22C55E;
+    image: url(ui/icon/minus.svg);
+}
+#chkSelectAll {
+    color: #64748B;
+    font-weight: bold;
+    font-size: 12px;
+    background-color: transparent;
+}
 """
 
 LIGHT_THEME = """
@@ -448,7 +478,6 @@ QListWidget::item:hover { background-color: #F1F5F9; }
 QListWidget::item:selected {
     background-color: #F1F5F9;
     color: #22C55E;
-    border-left: 4px solid #22C55E;
 }
 QListWidget QLineEdit {
     background-color: #FFFFFF;
@@ -519,7 +548,7 @@ QLabel { color: #334155; background: transparent; }
     background-color: #FFFFFF;
     border-left: 1px solid #E5E5E5;
 }
-#classesContainer, #filesContainer, #samTextGroup, #rightSplitter {
+#classesContainer, #filesContainer, #samTextGroup, #rightSplitter, #filesHeader {
     background-color: transparent;
 }
 #rightPanelTitle {
@@ -763,5 +792,36 @@ QLabel { color: #334155; background: transparent; }
 #classListWidget::item:selected {
     background-color: #F1F5F9;
     color: #22C55E;
+}
+QCheckBox {
+    spacing: 5px;
+    font-size: 13px;
+    font-weight: 500;
+}
+QCheckBox::indicator, QListWidget::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid #CBD5E1;
+    border-radius: 3px;
+    background-color: #FFFFFF;
+}
+QCheckBox::indicator:hover, QListWidget::indicator:hover {
+    border-color: #22C55E;
+}
+QCheckBox::indicator:checked, QListWidget::indicator:checked {
+    border-color: #22C55E;
+    background-color: #22C55E;
+    image: url(ui/icon/check.svg);
+}
+QCheckBox::indicator:indeterminate, QListWidget::indicator:indeterminate {
+    border-color: #22C55E;
+    background-color: #22C55E;
+    image: url(ui/icon/minus.svg);
+}
+#chkSelectAll {
+    color: #64748B;
+    font-weight: bold;
+    font-size: 12px;
+    background-color: transparent;
 }
 """

@@ -1,8 +1,8 @@
 import sys
 import os
 import json
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QInputDialog, QMessageBox, QLabel, QListWidgetItem, QDialog, QMenu, QAbstractItemView
-from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QInputDialog, QMessageBox, QLabel, QListWidgetItem, QDialog, QMenu, QAbstractItemView, QProgressBar, QVBoxLayout, QHBoxLayout, QPushButton
+from PySide6.QtCore import Qt, QPointF, QRectF, QThread, Signal, QSize
 from PySide6.QtGui import QPainter, QIcon, QPixmap, QColor, QAction, QActionGroup, QPolygonF, QMovie
 from main_dataset_tool import DatasetToolWindow
 try:
@@ -20,6 +20,248 @@ from labelpaw.graphics.shapes import RectShape, PolyShape, PointShape, RotatedRe
 from labelpaw.config.pose_template import TemplateManager
 from utils.message import DialogOver
 from labelpaw.models.yolo_predictor import YoloPredictorWorker
+
+
+class SamBatchWorker(QThread):
+    progress = Signal(int, int, str)  # current, total, filename
+    finished = Signal(int, int)  # processed, total
+    error = Signal(str)
+
+    def __init__(self, processor, model, img_paths, prompts, current_format, class_list, canvas_mode):
+        super().__init__()
+        self.processor = processor
+        self.model = model
+        self.img_paths = img_paths
+        self.prompts = prompts
+        self.current_format = current_format
+        self.class_list = list(class_list)
+        self.canvas_mode = canvas_mode
+        self.is_cancelled = False
+
+    def run(self):
+        import cv2
+        import numpy as np
+        import torch
+        from PIL import Image
+        from labelpaw.data.exporter import Exporter
+
+        total = len(self.img_paths)
+        processed = 0
+
+        try:
+            for idx, img_path in enumerate(self.img_paths):
+                if self.is_cancelled:
+                    break
+
+                filename = os.path.basename(img_path)
+                self.progress.emit(idx, total, filename)
+
+                # 1. 加载图像并获取宽高
+                pil_img = Image.open(img_path).convert("RGB")
+                w_img, h_img = pil_img.size
+
+                # 2. 提取特征
+                with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    state = self.processor.set_image(pil_img)
+
+                # 3. 针对每个提示词逐一推理并整合结果
+                shapes_data = []
+                for prompt in self.prompts:
+                    if self.is_cancelled:
+                        break
+
+                    with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                        out_state = self.processor.set_text_prompt(prompt=prompt, state=state)
+
+                        masks = out_state.get("masks", [])
+                        scores = out_state.get("scores", [])
+                        boxes = out_state.get("boxes", [])
+
+                        if len(masks) > 0:
+                            for i in range(len(masks)):
+                                mask_np = masks[i].cpu().numpy() if torch.is_tensor(masks[i]) else masks[i]
+                                mask_np = np.squeeze(mask_np)
+
+                                score_val = float(scores[i].cpu() if torch.is_tensor(scores[i]) else scores[i])
+                                box = boxes[i].cpu().numpy() if torch.is_tensor(boxes[i]) else boxes[i]
+
+                                if box.ndim > 1:
+                                    box = box.squeeze()
+                                x1, y1, x2, y2 = box
+                                rect_xywh = [float(x1), float(y1), float(x2 - x1), float(y2 - y1)]
+
+                                mask_uint8 = (mask_np > 0.5).astype(np.uint8) * 255
+                                contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                                poly_pts = []
+                                rect_obb = []
+                                if contours:
+                                    largest_contour = max(contours, key=cv2.contourArea)
+                                    epsilon = 0.002 * cv2.arcLength(largest_contour, True)
+                                    approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+                                    poly_pts = approx.reshape(-1, 2).tolist()
+
+                                    obb = cv2.minAreaRect(largest_contour)
+                                    rect_obb = [float(obb[0][0]), float(obb[0][1]), float(obb[1][0]), float(obb[1][1]), float(obb[2])]
+
+                                if poly_pts:
+                                    shapes_data.append({
+                                        "label": prompt,
+                                        "type": "polygon",
+                                        "points": poly_pts,
+                                        "rect": rect_xywh,
+                                        "obb": rect_obb,
+                                        "score": score_val
+                                    })
+
+                if self.is_cancelled:
+                    break
+
+                # 4. 后台直接保存至文件
+                if shapes_data:
+                    base_name = os.path.splitext(img_path)[0]
+                    export_shapes = []
+                    
+                    for s in shapes_data:
+                        label = s["label"]
+                        poly_pts = s["points"]
+                        rect_xywh = s["rect"]
+                        rect_obb = s["obb"]
+                        
+                        if self.canvas_mode == 1:  # CanvasMode.RECT
+                            x, y, w, h = rect_xywh
+                            export_shapes.append({
+                                "label": label,
+                                "type": "rectangle",
+                                "points": [[x, y], [x + w, y + h]]
+                            })
+                        elif self.canvas_mode == 2:  # CanvasMode.POLY
+                            export_shapes.append({
+                                "label": label,
+                                "type": "polygon",
+                                "points": poly_pts
+                            })
+                        elif self.canvas_mode == 4:  # CanvasMode.RBOX
+                            if rect_obb and len(rect_obb) == 5:
+                                cx, cy, w, h, angle = rect_obb
+                                rect_box = cv2.boxPoints(((cx, cy), (w, h), angle))
+                                points = rect_box.tolist()
+                                export_shapes.append({
+                                    "label": label,
+                                    "type": "obb",
+                                    "points": points,
+                                    "rect": [cx, cy, w, h],
+                                    "angle": angle
+                                })
+
+                    if export_shapes:
+                        if self.current_format == "json":
+                            out_path = base_name + ".json"
+                            Exporter.save_json(out_path, img_path, w_img, h_img, export_shapes)
+                        elif self.current_format == "yolo":
+                            out_path = base_name + ".txt"
+                            Exporter.save_yolo(out_path, w_img, h_img, export_shapes, self.class_list)
+                        elif self.current_format == "xml":
+                            out_path = base_name + ".xml"
+                            Exporter.save_xml(out_path, img_path, w_img, h_img, export_shapes)
+
+                processed += 1
+
+            self.finished.emit(processed, total)
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.error.emit(str(e))
+
+
+class BatchProgressDialog(QDialog):
+    def __init__(self, parent=None, is_dark_theme=False):
+        super().__init__(parent)
+        self.setWindowTitle("SAM 3 批量标注中")
+        self.setFixedSize(420, 180)
+        self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
+        self.is_cancelled = False
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+        
+        # Header layout (Loading.gif + text)
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(12)
+        
+        self.loading_label = QLabel()
+        self.loading_label.setFixedSize(32, 32)
+        self.movie = QMovie("ui/icon/Loading.gif")
+        self.movie.setScaledSize(QSize(32, 32))
+        self.loading_label.setMovie(self.movie)
+        self.movie.start()
+        
+        self.status_label = QLabel("正在初始化批量标注任务...")
+        self.status_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        
+        header_layout.addWidget(self.loading_label)
+        header_layout.addWidget(self.status_label, 1)
+        layout.addLayout(header_layout)
+        
+        # Progress Bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #475569;
+                border-radius: 6px;
+                text-align: center;
+                height: 20px;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background-color: #22C55E;
+                border-radius: 5px;
+            }
+        """)
+        layout.addWidget(self.progress_bar)
+        
+        # Cancel Button Layout
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        self.btn_cancel = QPushButton("取消任务")
+        self.btn_cancel.setCursor(Qt.PointingHandCursor)
+        self.btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #EF4444;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 18px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #F87171; }
+        """)
+        self.btn_cancel.clicked.connect(self.cancel_task)
+        btn_layout.addWidget(self.btn_cancel)
+        layout.addLayout(btn_layout)
+        
+        if is_dark_theme:
+            self.setStyleSheet("""
+                QDialog { background-color: #1E293B; color: #F8FAFC; }
+                QLabel { color: #F8FAFC; }
+                QProgressBar { border-color: #334155; background-color: #0F172A; color: #F8FAFC; }
+            """)
+        else:
+            self.setStyleSheet("""
+                QDialog { background-color: #F8FAFC; color: #0F172A; }
+                QLabel { color: #0F172A; }
+                QProgressBar { border-color: #E2E8F0; background-color: #F1F5F9; color: #0F172A; }
+            """)
+
+    def cancel_task(self):
+        self.is_cancelled = True
+        self.status_label.setText("正在取消任务，请稍候...")
+        self.btn_cancel.setEnabled(False)
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -71,12 +313,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.on_model_selected("sam3")
         
         self.yolo_worker = None
+
+        # 初始化 btnDeleteFiles 的图标颜色
+        from PySide6.QtGui import QColor
+        self.current_icon_color = QColor(15, 23, 42)
+        self.btnDeleteFiles.setIcon(self.set_icon_color(QIcon("ui/icon/trash.svg"), self.current_icon_color))
         
         self.btnPredict.setIcon(QIcon("ui/icon/lightning-fill.svg"))
         
         # 预测按钮动画
         self.predict_movie = QMovie("ui/icon/Loading.gif")
         self.predict_movie.frameChanged.connect(self.update_predict_icon)
+        
+        # 初始化选择框状态和可用性
+        self.update_selected_count()
 
     def update_predict_icon(self):
         self.btnPredict.setIcon(QIcon(self.predict_movie.currentPixmap()))
@@ -230,6 +480,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.samPromptBtn.clicked.connect(self.trigger_sam_prompt)
         self.samPromptInput.returnPressed.connect(self.trigger_sam_prompt)
 
+        self.chkSelectAll.stateChanged.connect(self.on_select_all_toggled)
+        self.btnDeleteFiles.clicked.connect(self.delete_checked_files)
+        self.listFiles.itemChanged.connect(self.on_file_item_changed)
         self.listFiles.currentItemChanged.connect(self.on_file_selected)
         self.listFiles.customContextMenuRequested.connect(self.show_file_list_context_menu)
         self.scene.mouse_moved.connect(self.update_coordinate_label)
@@ -712,12 +965,96 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             DialogOver(self, f"启动失败: {e}", "系统错误", "danger")
 
     def trigger_sam_prompt(self):
-        if self.scene.mode == CanvasMode.POINT:
-            DialogOver(self, "点标注模式下无法使用 SAM 智能提取", "提示", "warning")
+        prompt = self.samPromptInput.text().strip()
+        if not prompt:
+            DialogOver(self, "请输入提示词进行提取！", "提示", "warning")
             return
 
-        prompt = self.samPromptInput.text().strip()
-        if prompt:
+        # 收集所有勾选的文件
+        checked_paths = []
+        for i in range(self.listFiles.count()):
+            item = self.listFiles.item(i)
+            if item and item.checkState() == Qt.Checked:
+                checked_paths.append(item.text())
+
+        if len(checked_paths) > 1:
+            # 批量处理逻辑
+            if self.sam_client.current_model_type != "sam3" or not self.sam_client.model or not self.sam_client.processor:
+                DialogOver(self, "请先在上方选择并加载 SAM 3 模型以进行批量提示词处理！", "提示", "warning")
+                return
+
+            import re
+            prompts = [p.strip() for p in re.split(r'[,，、\s]+', prompt) if p.strip()]
+            if not prompts:
+                DialogOver(self, "输入的提示词无效，请重新输入！", "提示", "warning")
+                return
+
+            self.batch_dialog = BatchProgressDialog(self, self.is_dark_theme)
+            
+            self.batch_worker = SamBatchWorker(
+                processor=self.sam_client.processor,
+                model=self.sam_client.model,
+                img_paths=checked_paths,
+                prompts=prompts,
+                current_format=self.current_format,
+                class_list=self.class_list,
+                canvas_mode=self.scene.mode
+            )
+
+            # 连接进度更新
+            def update_progress(current, total, filename):
+                percent = int((current / total) * 100) if total > 0 else 0
+                self.batch_dialog.progress_bar.setValue(percent)
+                self.batch_dialog.status_label.setText(f"正在标注 ({current + 1}/{total}):\n{filename}")
+                
+            self.batch_worker.progress.connect(update_progress)
+
+            # 完成回调
+            def on_finished(processed, total):
+                self.batch_dialog.movie.stop()
+                self.batch_dialog.accept()
+                
+                # 同步类别到历史面板
+                for p in prompts:
+                    if p not in self.class_list:
+                        self.add_class_to_list(p)
+                self.save_classes()
+                
+                # 如果当前打开的图片在被批量标注的列表中，重新加载以显示新标注
+                if self.current_image_path in checked_paths:
+                    self.scene.clear_shapes()
+                    self.load_annotations(self.current_image_path)
+                    self.apply_class_colors_to_scene()
+                    self.update_annotation_tree()
+                    self.push_state()
+                
+                DialogOver(self, f"批量标注完成！成功处理 {processed}/{total} 张图片。", "批量标注", "success")
+                
+            self.batch_worker.finished.connect(on_finished)
+
+            # 错误回调
+            def on_error(err_msg):
+                self.batch_dialog.movie.stop()
+                self.batch_dialog.reject()
+                DialogOver(self, f"批量标注出错: {err_msg}", "错误", "danger")
+                
+            self.batch_worker.error.connect(on_error)
+
+            # 取消按钮连接
+            self.batch_dialog.btn_cancel.clicked.connect(lambda: setattr(self.batch_worker, 'is_cancelled', True))
+
+            self.batch_worker.start()
+            self.batch_dialog.exec()
+        else:
+            # 单张图片处理逻辑
+            if self.scene.mode == CanvasMode.POINT:
+                DialogOver(self, "点标注模式下无法使用 SAM 智能提取", "提示", "warning")
+                return
+
+            if not self.current_image_path:
+                DialogOver(self, "请先打开一张图片！", "提示", "warning")
+                return
+
             self.samSwitch.setChecked(True)
             self.helpLabel.setText(f"正在提取提示词: {prompt}...")
             self.helpLabel.setStyleSheet("color: orange;")
@@ -866,6 +1203,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.btnUndo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-left.svg"), self.current_icon_color))
             self.btnRedo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-right.svg"), self.current_icon_color))
             self.btnDelete.setIcon(self.set_icon_color(QIcon("ui/icon/trash.svg"), self.current_icon_color))
+            self.btnDeleteFiles.setIcon(self.set_icon_color(QIcon("ui/icon/trash.svg"), self.current_icon_color))
             self.btnSave.setIcon(self.set_icon_color(QIcon("ui/icon/floppy-disk.svg"), self.current_icon_color))
             self.btnKeyboard.setIcon(self.set_icon_color(QIcon("ui/icon/keyboard.svg"), self.current_icon_color))
             
@@ -888,6 +1226,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.btnUndo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-left.svg"), self.current_icon_color))
             self.btnRedo.setIcon(self.set_icon_color(QIcon("ui/icon/arrow-u-up-right.svg"), self.current_icon_color))
             self.btnDelete.setIcon(self.set_icon_color(QIcon("ui/icon/trash.svg"), self.current_icon_color))
+            self.btnDeleteFiles.setIcon(self.set_icon_color(QIcon("ui/icon/trash.svg"), self.current_icon_color))
             self.btnSave.setIcon(self.set_icon_color(QIcon("ui/icon/floppy-disk.svg"), self.current_icon_color))
             self.btnKeyboard.setIcon(self.set_icon_color(QIcon("ui/icon/keyboard.svg"), self.current_icon_color))
             
@@ -1217,7 +1556,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 更新标注树和保存
         self.update_annotation_tree()
         self.auto_save_annotation()
-
     def update_annotation_tree(self):
         shapes = []
         for item in self.scene.items():
@@ -1234,15 +1572,70 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.classListWidget.clear_tree_selection()
 
+    def on_select_all_toggled(self, state):
+        self.listFiles.blockSignals(True)
+        # 兼容 PySide6 整数和 CheckState 枚举比较
+        is_unchecked = (state == 0 or state == Qt.Unchecked)
+        if is_unchecked:
+            check_state = Qt.Unchecked
+        else:
+            check_state = Qt.Checked
+            # 强制设为 Checked 状态（以防万一）
+            self.chkSelectAll.blockSignals(True)
+            self.chkSelectAll.setCheckState(Qt.Checked)
+            self.chkSelectAll.blockSignals(False)
+        for i in range(self.listFiles.count()):
+            item = self.listFiles.item(i)
+            if item:
+                item.setCheckState(check_state)
+        self.listFiles.blockSignals(False)
+        self.update_selected_count()
+
+    def on_file_item_changed(self, item):
+        self.update_selected_count()
+
+    def update_selected_count(self):
+        total = self.listFiles.count()
+        checked = 0
+        for i in range(total):
+            item = self.listFiles.item(i)
+            if item and item.checkState() == Qt.Checked:
+                checked += 1
+                
+        self.labelSelectedCount.setText(f"(已选 {checked}/{total})")
+        
+        # 动态控制可用性
+        has_items = total > 0
+        self.chkSelectAll.setEnabled(has_items)
+        self.btnDeleteFiles.setEnabled(has_items)
+        
+        self.chkSelectAll.blockSignals(True)
+        if total == 0:
+            self.chkSelectAll.setCheckState(Qt.Unchecked)
+        elif checked == 0:
+            self.chkSelectAll.setCheckState(Qt.Unchecked)
+        elif checked == total:
+            self.chkSelectAll.setCheckState(Qt.Checked)
+        else:
+            self.chkSelectAll.setCheckState(Qt.PartiallyChecked)
+        self.chkSelectAll.setTristate(False)
+        self.chkSelectAll.blockSignals(False)
+
     def open_dir(self):
         dir_path = QFileDialog.getExistingDirectory(self, "选择图片目录")
         if dir_path:
             self.current_dir = dir_path
             self.listFiles.clear()
             self.load_classes(dir_path)
+            self.listFiles.blockSignals(True)
             for f in os.listdir(dir_path):
                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
-                    self.listFiles.addItem(os.path.join(dir_path, f))
+                    item = QListWidgetItem(os.path.join(dir_path, f))
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Unchecked)
+                    self.listFiles.addItem(item)
+            self.listFiles.blockSignals(False)
+            self.update_selected_count()
 
             if self.listFiles.count() > 0:
                 self.listFiles.setCurrentRow(0)
@@ -1332,6 +1725,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         # 恢复信号
         self.listFiles.currentItemChanged.connect(self.on_file_selected)
+        self.update_selected_count()
 
         if current_deleted:
             self.statusBar.showMessage(f"已删除 {deleted_count} 个文件，当前预览已清除", 3000)
@@ -1346,6 +1740,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.on_file_selected(item, None)
         else:
             self.statusBar.showMessage(f"成功删除 {deleted_count} 个文件", 3000)
+
+    def delete_checked_files(self):
+        # Find all checked items
+        checked_items = []
+        for i in range(self.listFiles.count()):
+            item = self.listFiles.item(i)
+            if item and item.checkState() == Qt.Checked:
+                checked_items.append(item)
+                
+        if not checked_items:
+            DialogOver(self, "请先勾选要删除的文件！", "提示", "warning")
+            return
+            
+        # Ask for confirmation
+        from PySide6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self, 
+            "批量删除文件", 
+            f"确定要删除勾选的 {len(checked_items)} 个图片及其标注文件吗？此操作不可逆！", 
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self.delete_selected_files(checked_items)
 
     def on_file_selected(self, current, previous):
         if previous:

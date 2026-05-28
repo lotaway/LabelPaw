@@ -1,7 +1,7 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QToolBar, QListWidget, QGraphicsView,
-                               QLabel, QLineEdit, QPushButton, QStatusBar, QMenu, QComboBox, QSizePolicy, QAbstractItemView, QSplitter)
+                               QLabel, QLineEdit, QPushButton, QStatusBar, QMenu, QComboBox, QSizePolicy, QAbstractItemView, QSplitter, QCheckBox)
 from ui.annotation_tree_widget import AnnotationTreeWidget
 from PySide6.QtCore import Qt, Signal, QRect, QSize
 from PySide6.QtGui import QAction, QActionGroup, QPainter, QColor, QFont, QIcon, QPixmap
@@ -598,11 +598,58 @@ class Ui_MainWindow(object):
         self.filesContainer.setObjectName("filesContainer")
         filesLayout = QVBoxLayout(self.filesContainer)
         filesLayout.setContentsMargins(0, 0, 0, 0)
-        self.labelFiles = QLabel("文件列表:")
+        filesLayout.setSpacing(6)
+        
+        # 文件列表头部布局 (复选框 + 计数标签)
+        self.filesHeader = QWidget()
+        self.filesHeader.setObjectName("filesHeader")
+        filesHeaderLayout = QHBoxLayout(self.filesHeader)
+        filesHeaderLayout.setContentsMargins(0, 0, 0, 4)
+        filesHeaderLayout.setSpacing(6)
+        
+        self.chkSelectAll = QCheckBox("全选")
+        self.chkSelectAll.setObjectName("chkSelectAll")
+        self.chkSelectAll.setCursor(Qt.PointingHandCursor)
+        self.chkSelectAll.setTristate(False)
+
+        self.btnDeleteFiles = QPushButton()
+        self.btnDeleteFiles.setObjectName("btnDeleteFiles")
+        self.btnDeleteFiles.setCursor(Qt.PointingHandCursor)
+        self.btnDeleteFiles.setIcon(QIcon("ui/icon/trash.svg"))
+        self.btnDeleteFiles.setIconSize(QSize(13, 13))
+        self.btnDeleteFiles.setToolTip("批量删除选中的图片")
+        self.btnDeleteFiles.setFixedSize(22, 22)
+        self.btnDeleteFiles.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QPushButton:hover {
+                background-color: rgba(239, 68, 68, 0.2);
+            }
+        """)
+        
+        self.labelFiles = QLabel("文件列表")
+        self.labelFiles.setObjectName("labelFiles")
+        self.labelFiles.setStyleSheet("font-weight: bold;")
+        
+        self.labelSelectedCount = QLabel("(已选 0/0)")
+        self.labelSelectedCount.setObjectName("labelSelectedCount")
+        self.labelSelectedCount.setStyleSheet("color: #64748B; font-size: 11px;")
+        
+        filesHeaderLayout.addWidget(self.chkSelectAll)
+        filesHeaderLayout.addWidget(self.btnDeleteFiles)
+        filesHeaderLayout.addWidget(self.labelFiles)
+        filesHeaderLayout.addWidget(self.labelSelectedCount)
+        filesHeaderLayout.addStretch()
+        
         self.listFiles = QListWidget()
         self.listFiles.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.listFiles.setContextMenuPolicy(Qt.CustomContextMenu)
-        filesLayout.addWidget(self.labelFiles)
+        
+        filesLayout.addWidget(self.filesHeader)
         filesLayout.addWidget(self.listFiles)
 
         # Add both to splitter

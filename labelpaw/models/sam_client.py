@@ -169,54 +169,58 @@ class Sam3InferenceWorker(QThread):
                         self.result_ready.emit(poly_pts, rect_xywh, rect_obb, score_val, is_click)
 
                 elif task_type == 'text':
-                    prompt_text = data
+                    prompts = data
+                    if isinstance(prompts, str):
+                        prompts = [prompts]
+                    
                     if not self.processor:
                         continue
 
-                    with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                        out_state = self.processor.set_text_prompt(prompt=prompt_text, state=self.inference_state)
+                    for prompt_text in prompts:
+                        with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                            out_state = self.processor.set_text_prompt(prompt=prompt_text, state=self.inference_state)
 
-                        masks = out_state.get("masks", [])
-                        scores = out_state.get("scores", [])
-                        boxes = out_state.get("boxes", [])
+                            masks = out_state.get("masks", [])
+                            scores = out_state.get("scores", [])
+                            boxes = out_state.get("boxes", [])
 
-                        results = []
-                        if len(masks) > 0:
-                            for i in range(len(masks)):
-                                mask_np = masks[i].cpu().numpy() if torch.is_tensor(masks[i]) else masks[i]
-                                mask_np = np.squeeze(mask_np)
+                            results = []
+                            if len(masks) > 0:
+                                for i in range(len(masks)):
+                                    mask_np = masks[i].cpu().numpy() if torch.is_tensor(masks[i]) else masks[i]
+                                    mask_np = np.squeeze(mask_np)
 
-                                score_val = float(scores[i].cpu() if torch.is_tensor(scores[i]) else scores[i])
-                                box = boxes[i].cpu().numpy() if torch.is_tensor(boxes[i]) else boxes[i]
+                                    score_val = float(scores[i].cpu() if torch.is_tensor(scores[i]) else scores[i])
+                                    box = boxes[i].cpu().numpy() if torch.is_tensor(boxes[i]) else boxes[i]
 
-                                if box.ndim > 1:
-                                    box = box.squeeze()
-                                x1, y1, x2, y2 = box
-                                rect_xywh = [x1, y1, x2 - x1, y2 - y1]
+                                    if box.ndim > 1:
+                                        box = box.squeeze()
+                                    x1, y1, x2, y2 = box
+                                    rect_xywh = [x1, y1, x2 - x1, y2 - y1]
 
-                                mask_uint8 = (mask_np > 0.5).astype(np.uint8) * 255
-                                contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                                    mask_uint8 = (mask_np > 0.5).astype(np.uint8) * 255
+                                    contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-                                poly_pts = []
-                                rect_obb = []
-                                if contours:
-                                    largest_contour = max(contours, key=cv2.contourArea)
-                                    epsilon = 0.002 * cv2.arcLength(largest_contour, True)
-                                    approx = cv2.approxPolyDP(largest_contour, epsilon, True)
-                                    poly_pts = approx.reshape(-1, 2).tolist()
+                                    poly_pts = []
+                                    rect_obb = []
+                                    if contours:
+                                        largest_contour = max(contours, key=cv2.contourArea)
+                                        epsilon = 0.002 * cv2.arcLength(largest_contour, True)
+                                        approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+                                        poly_pts = approx.reshape(-1, 2).tolist()
 
-                                    obb = cv2.minAreaRect(largest_contour)
-                                    rect_obb = [obb[0][0], obb[0][1], obb[1][0], obb[1][1], obb[2]]
+                                        obb = cv2.minAreaRect(largest_contour)
+                                        rect_obb = [obb[0][0], obb[0][1], obb[1][0], obb[1][1], obb[2]]
 
-                                if poly_pts:
-                                    results.append({
-                                        "poly_pts": poly_pts,
-                                        "rect": rect_xywh,
-                                        "obb": rect_obb,
-                                        "score": score_val
-                                    })
+                                    if poly_pts:
+                                        results.append({
+                                            "poly_pts": poly_pts,
+                                            "rect": rect_xywh,
+                                            "obb": rect_obb,
+                                            "score": score_val
+                                        })
 
-                        self.text_result_ready.emit(results, prompt_text)
+                            self.text_result_ready.emit(results, prompt_text)
 
             except queue.Empty:
                 continue
@@ -473,7 +477,10 @@ class SAMClient(QObject):
     def request_text_inference(self, prompt_text):
         """文本提示词推理（仅 SAM3 支持）"""
         if self.current_model_type == "sam3" and self._sam3_worker:
-            self._sam3_worker.request_text_inference(prompt_text)
+            import re
+            prompts = [p.strip() for p in re.split(r'[,，、\s]+', prompt_text) if p.strip()]
+            if prompts:
+                self._sam3_worker.request_text_inference(prompts)
 
     def supports_text_prompt(self):
         """当前模型是否支持文本提示词"""
