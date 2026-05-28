@@ -1,8 +1,10 @@
 import sys
 import os
 import json
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QInputDialog, QMessageBox, QLabel, QListWidgetItem, QDialog, QMenu, QAbstractItemView, QProgressBar, QVBoxLayout, QHBoxLayout, QPushButton
-from PySide6.QtCore import Qt, QPointF, QRectF, QThread, Signal, QSize
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QInputDialog, QMessageBox, QLabel, \
+    QListWidgetItem, QDialog, QMenu, QAbstractItemView, QProgressBar, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, \
+    QCheckBox, QListWidget, QFrame, QWidget
+from PySide6.QtCore import Qt, QPointF, QRectF, QThread, Signal, QSize, QEvent
 from PySide6.QtGui import QPainter, QIcon, QPixmap, QColor, QAction, QActionGroup, QPolygonF, QMovie
 from main_dataset_tool import DatasetToolWindow
 import cv2
@@ -31,7 +33,7 @@ class SamBatchWorker(QThread):
     finished = Signal(int, int)  # processed, total
     error = Signal(str)
 
-    def __init__(self, processor, model, img_paths, prompts, current_format, class_list, canvas_mode):
+    def __init__(self, processor, model, img_paths, prompts, current_format, class_list, canvas_mode, overwrite=False):
         super().__init__()
         self.processor = processor
         self.model = model
@@ -41,6 +43,7 @@ class SamBatchWorker(QThread):
         self.class_list = list(class_list)
         self.canvas_mode = canvas_mode
         self.is_cancelled = False
+        self.overwrite = overwrite
 
     def run(self):
         total = len(self.img_paths)
@@ -152,16 +155,100 @@ class SamBatchWorker(QThread):
                                     "angle": angle
                                 })
 
-                    if export_shapes:
+                    # Load existing shapes if we are in merge mode (not self.overwrite)
+                    all_shapes = []
+                    if not self.overwrite:
+                        if self.current_format == "json":
+                            json_path = base_name + ".json"
+                            if os.path.exists(json_path):
+                                try:
+                                    import json
+                                    with open(json_path, "r", encoding="utf-8") as f:
+                                        data_json = json.load(f)
+                                    for s in data_json.get("shapes", []):
+                                        all_shapes.append({
+                                            "label": s.get("label", ""),
+                                            "type": s.get("shape_type", "rectangle"),
+                                            "points": s.get("points", []),
+                                            "rect": s.get("rect", [0, 0, 0, 0]),
+                                            "angle": s.get("angle", 0.0),
+                                            "keypoints": s.get("keypoints", []),
+                                            "kpt_shape": s.get("kpt_shape", []),
+                                            "template_name": s.get("template_name", "")
+                                        })
+                                except Exception as e:
+                                    print(f"加载已有 JSON 标注出错 {json_path}: {e}")
+                        elif self.current_format == "yolo":
+                            txt_path = base_name + ".txt"
+                            if os.path.exists(txt_path):
+                                try:
+                                    with open(txt_path, "r", encoding="utf-8") as f:
+                                        for line in f:
+                                            parts = line.strip().split()
+                                            if len(parts) >= 5:
+                                                cls_id = int(parts[0])
+                                                if cls_id < len(self.class_list):
+                                                    label = self.class_list[cls_id]
+                                                else:
+                                                    label = f"class_{cls_id}"
+                                                cx, cy, w, h = map(float, parts[1:5])
+                                                abs_cx = cx * w_img
+                                                abs_cy = cy * h_img
+                                                abs_w = w * w_img
+                                                abs_h = h * h_img
+                                                x1 = abs_cx - abs_w / 2
+                                                y1 = abs_cy - abs_h / 2
+                                                all_shapes.append({
+                                                    "label": label,
+                                                    "type": "rectangle",
+                                                    "points": [[x1, y1], [x1 + abs_w, y1 + abs_h]]
+                                                })
+                                except Exception as e:
+                                    print(f"加载已有 YOLO 标注出错 {txt_path}: {e}")
+                        elif self.current_format == "xml":
+                            xml_path = base_name + ".xml"
+                            if os.path.exists(xml_path):
+                                try:
+                                    import xml.etree.ElementTree as ET
+                                    tree = ET.parse(xml_path)
+                                    root = tree.getroot()
+                                    for obj in root.findall("object"):
+                                        label = obj.find("name").text
+                                        bndbox = obj.find("bndbox")
+                                        x1 = float(bndbox.find("xmin").text)
+                                        y1 = float(bndbox.find("ymin").text)
+                                        x2 = float(bndbox.find("xmax").text)
+                                        y2 = float(bndbox.find("ymax").text)
+                                        all_shapes.append({
+                                            "label": label,
+                                            "type": "rectangle",
+                                            "points": [[x1, y1], [x2, y2]]
+                                        })
+                                except Exception as e:
+                                    print(f"加载已有 XML 标注出错 {xml_path}: {e}")
+
+                    # Add new prediction shapes to all_shapes
+                    all_shapes.extend(export_shapes)
+
+                    if all_shapes:
                         if self.current_format == "json":
                             out_path = base_name + ".json"
-                            Exporter.save_json(out_path, img_path, w_img, h_img, export_shapes)
+                            Exporter.save_json(out_path, img_path, w_img, h_img, all_shapes)
                         elif self.current_format == "yolo":
                             out_path = base_name + ".txt"
-                            Exporter.save_yolo(out_path, w_img, h_img, export_shapes, self.class_list)
+                            Exporter.save_yolo(out_path, w_img, h_img, all_shapes, self.class_list)
                         elif self.current_format == "xml":
                             out_path = base_name + ".xml"
-                            Exporter.save_xml(out_path, img_path, w_img, h_img, export_shapes)
+                            Exporter.save_xml(out_path, img_path, w_img, h_img, all_shapes)
+                    elif self.overwrite:
+                        # 覆盖模式下且无新标注时清空文件
+                        for ext in [".json", ".txt", ".xml"]:
+                            out_path = base_name + ext
+                            if os.path.exists(out_path):
+                                try:
+                                    os.remove(out_path)
+                                except Exception as e:
+                                    print(f"删除空标注文件失败 {out_path}: {e}")
 
                 processed += 1
 
@@ -176,7 +263,7 @@ class YoloBatchPredictorWorker(QThread):
     finished = Signal(int, int, list)  # processed, total, detected_classes
     error = Signal(str)
 
-    def __init__(self, predictor, img_paths, current_format, class_list, template_manager=None):
+    def __init__(self, predictor, img_paths, current_format, class_list, template_manager=None, classes=None, overwrite=False):
         super().__init__()
         self.predictor = predictor
         self.img_paths = img_paths
@@ -184,6 +271,8 @@ class YoloBatchPredictorWorker(QThread):
         self.class_list = list(class_list)
         self.template_manager = template_manager
         self.is_cancelled = False
+        self.classes = classes
+        self.overwrite = overwrite
 
     def run(self):
         import cv2
@@ -214,17 +303,139 @@ class YoloBatchPredictorWorker(QThread):
                     processed += 1
                     continue
 
+                base_name = os.path.splitext(img_path)[0]
+                existing_shapes = []
+
+                # 1.1 读取并保留已有的标注（以实现增量合并预测）
+                if not self.overwrite:
+                    if self.current_format == "json":
+                        json_path = base_name + ".json"
+                        if os.path.exists(json_path):
+                            try:
+                                import json
+                                with open(json_path, "r", encoding="utf-8") as f:
+                                    data_json = json.load(f)
+                                for s in data_json.get("shapes", []):
+                                    existing_shapes.append({
+                                        "label": s.get("label", ""),
+                                        "type": s.get("shape_type", "rectangle"),
+                                        "points": s.get("points", []),
+                                        "rect": s.get("rect", [0, 0, 0, 0]),
+                                        "angle": s.get("angle", 0.0),
+                                        "keypoints": s.get("keypoints", []),
+                                        "kpt_shape": s.get("kpt_shape", []),
+                                        "template_name": s.get("template_name", "")
+                                    })
+                            except Exception as e:
+                                print(f"加载已有 JSON 标注出错 {json_path}: {e}")
+                    elif self.current_format == "yolo":
+                        txt_path = base_name + ".txt"
+                        if os.path.exists(txt_path):
+                            try:
+                                with open(txt_path, "r", encoding="utf-8") as f:
+                                    for line in f:
+                                        parts = line.strip().split()
+                                        if len(parts) >= 5:
+                                            cls_id = int(parts[0])
+                                            if cls_id < len(self.class_list):
+                                                label = self.class_list[cls_id]
+                                            else:
+                                                label = f"class_{cls_id}"
+                                            cx, cy, w, h = map(float, parts[1:5])
+                                            abs_cx = cx * w_img
+                                            abs_cy = cy * h_img
+                                            abs_w = w * w_img
+                                            abs_h = h * h_img
+                                            x1 = abs_cx - abs_w / 2
+                                            y1 = abs_cy - abs_h / 2
+                                            existing_shapes.append({
+                                                "label": label,
+                                                "type": "rectangle",
+                                                "points": [[x1, y1], [x1 + abs_w, y1 + abs_h]]
+                                            })
+                            except Exception as e:
+                                print(f"加载已有 YOLO 标注出错 {txt_path}: {e}")
+                    elif self.current_format == "xml":
+                        xml_path = base_name + ".xml"
+                        if os.path.exists(xml_path):
+                            try:
+                                import xml.etree.ElementTree as ET
+                                tree = ET.parse(xml_path)
+                                root = tree.getroot()
+                                for obj in root.findall("object"):
+                                    label = obj.find("name").text
+                                    bndbox = obj.find("bndbox")
+                                    x1 = float(bndbox.find("xmin").text)
+                                    y1 = float(bndbox.find("ymin").text)
+                                    x2 = float(bndbox.find("xmax").text)
+                                    y2 = float(bndbox.find("ymax").text)
+                                    existing_shapes.append({
+                                        "label": label,
+                                        "type": "rectangle",
+                                        "points": [[x1, y1], [x2, y2]]
+                                    })
+                            except Exception as e:
+                                print(f"加载已有 XML 标注出错 {xml_path}: {e}")
+
                 # 2. 运行 YOLO 同步预测
-                shapes = self.predictor.predict_sync(img_path)
+                shapes = self.predictor.predict_sync(img_path, classes=self.classes)
                 
-                # 3. 解析预测结果为 Exporter 结构
-                export_shapes = []
+                # 3. 解析预测结果并与已有标注进行 IoU 重合度去重过滤
+                def get_ext_rect(s):
+                    stype = s.get("type", "rectangle")
+                    if stype in ["rectangle", "polygon", "obb"] and s.get("points"):
+                        pts = s["points"]
+                        xs = [p[0] for p in pts]
+                        ys = [p[1] for p in pts]
+                        return QRectF(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+                    elif stype == "pose" and s.get("rect"):
+                        cx, cy, w, h = s["rect"]
+                        return QRectF(cx - w/2, cy - h/2, w, h)
+                    return None
+
+                def get_iou(r1, r2):
+                    if not r1 or not r2:
+                        return 0.0
+                    intersection = r1.intersected(r2)
+                    inter_area = max(0.0, intersection.width()) * max(0.0, intersection.height())
+                    area1 = max(0.0, r1.width()) * max(0.0, r1.height())
+                    area2 = max(0.0, r2.width()) * max(0.0, r2.height())
+                    union_area = area1 + area2 - inter_area
+                    if union_area > 0.0:
+                        return inter_area / union_area
+                    return 0.0
+
+                export_shapes = list(existing_shapes)
+                
                 for s in shapes:
                     shape_type = s["type"]
                     label = s["label"]
                     data = s["data"]
                     detected_classes.add(label)
 
+                    # 计算预测框的外接矩形
+                    new_rect = None
+                    if shape_type == "rect":
+                        new_rect = data
+                    elif shape_type in ["poly", "rbox"]:
+                        new_rect = data.boundingRect()
+                    elif shape_type == "pose":
+                        new_rect = data["rect"]
+
+                    # 仅在【相同类别】且【IoU > 0.8】时去重；不同类别即使重合度再高也要保留
+                    is_duplicate = False
+                    if new_rect:
+                        for ext in existing_shapes:
+                            if ext.get("label", "") == label:
+                                ext_rect = get_ext_rect(ext)
+                                if ext_rect and get_iou(new_rect, ext_rect) > 0.8:
+                                    is_duplicate = True
+                                    break
+
+                    if is_duplicate:
+                        continue
+
+                    # 转换新预测的框为对应格式并加入队列
                     if shape_type == "rect":
                         x1, y1 = data.x(), data.y()
                         w, h = data.width(), data.height()
@@ -266,7 +477,7 @@ class YoloBatchPredictorWorker(QThread):
                             pos = kp["pos"]
                             keypoints.append([pos.x(), pos.y(), kp["vis"]])
 
-                        # 构造和保存模板，以便加载时能够显示连线！
+                        # 构造和保存模板
                         template_name = None
                         if "skeleton" in s and self.template_manager:
                             template_name = f"YOLO_Auto_{len(keypoints)}"
@@ -280,12 +491,10 @@ class YoloBatchPredictorWorker(QThread):
                                 "connections": []
                             }
                             
-                            # 填充点名称
                             for i in range(len(keypoints)):
                                 name = kpt_names[i] if i < len(kpt_names) else f"kp_{i}"
                                 template["keypoints"].append({"name": name, "color": "#00FF00", "default_pos": [0.5, 0.5]})
                                 
-                            # 填充连接线 (1-based to 0-based)
                             for edge in yolo_skeleton:
                                 if len(edge) == 2:
                                     p1, p2 = edge[0], edge[1]
@@ -296,7 +505,6 @@ class YoloBatchPredictorWorker(QThread):
                                         
                             self.template_manager.add_template(template)
 
-                        # 兜底：如果模型没有包含自定义 skeleton，尝试从本地模板库匹配同点数的已有模板（例如 Person (COCO)）
                         if not template_name and self.template_manager:
                             for t in self.template_manager.templates:
                                 if len(t.get("keypoints", [])) == len(keypoints):
@@ -318,9 +526,8 @@ class YoloBatchPredictorWorker(QThread):
                         }
                         export_shapes.append(export_shape_dict)
 
-                # 4. 后台直接保存到对应的标注文件中
+                # 4. 后台增量保存到对应的标注文件中
                 if export_shapes:
-                    base_name = os.path.splitext(img_path)[0]
                     if self.current_format == "json":
                         out_path = base_name + ".json"
                         Exporter.save_json(out_path, img_path, w_img, h_img, export_shapes)
@@ -330,6 +537,14 @@ class YoloBatchPredictorWorker(QThread):
                     elif self.current_format == "xml":
                         out_path = base_name + ".xml"
                         Exporter.save_xml(out_path, img_path, w_img, h_img, export_shapes)
+                elif self.overwrite:
+                    for ext in [".json", ".txt", ".xml"]:
+                        out_path = base_name + ext
+                        if os.path.exists(out_path):
+                            try:
+                                os.remove(out_path)
+                            except Exception as e:
+                                print(f"无法删除空标注文件 {out_path}: {e}")
 
                 processed += 1
 
@@ -430,6 +645,370 @@ class BatchProgressDialog(QDialog):
         self.btn_cancel.setEnabled(False)
 
 
+class YoloClassFilterDialog(QDialog):
+    def __init__(self, class_names, selected_ids, is_dark_theme=False, parent=None):
+        super().__init__(parent)
+        self.class_names = class_names  # dict, e.g., {0: 'person', 1: 'bicycle'}
+        self.initial_selected_ids = set(selected_ids)
+        self.is_dark_theme = is_dark_theme
+        self.selected_ids = []
+        
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(360, 520)
+        
+        # Colors
+        bg_color = "#0F172A" if is_dark_theme else "#FFFFFF"
+        border_color = "#334155" if is_dark_theme else "#E2E8F0"
+        text_color = "#F8FAFC" if is_dark_theme else "#0F172A"
+        list_bg = "#0F172A" if is_dark_theme else "#FFFFFF"
+        item_hover_bg = "#1E293B" if is_dark_theme else "#F1F5F9"
+        primary_color = "#22C55E"
+        btn_hover_bg = "#16A34A"
+        
+        # Main Container QFrame
+        self.main_container = QFrame(self)
+        self.main_container.setObjectName("MainContainer")
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(self.main_container)
+        
+        # Layout inside Main Container
+        container_layout = QVBoxLayout(self.main_container)
+        container_layout.setContentsMargins(10, 10, 10, 15)
+        container_layout.setSpacing(10)
+        
+        # Custom Title Bar
+        self.title_bar = QWidget()
+        self.title_bar.setObjectName("TitleBar")
+        title_layout = QHBoxLayout(self.title_bar)
+        title_layout.setContentsMargins(10, 5, 5, 5)
+        
+        self.title_label = QLabel("YOLO 类别过滤")
+        self.title_label.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {text_color};")
+        title_layout.addWidget(self.title_label)
+        
+        title_layout.addStretch()
+        
+        self.btn_close = QPushButton()
+        self.btn_close.setFixedSize(28, 28)
+        self.btn_close.setCursor(Qt.PointingHandCursor)
+        self.btn_close.clicked.connect(self.reject)
+        
+        close_icon = QIcon("ui/icon/x.svg")
+        if is_dark_theme:
+            close_icon = self.set_icon_color(close_icon, QColor("#94A3B8"))
+        else:
+            close_icon = self.set_icon_color(close_icon, QColor("#64748B"))
+        self.btn_close.setIcon(close_icon)
+        self.btn_close.setIconSize(QSize(12, 12))
+        
+        self.btn_close.setStyleSheet(f"""
+            QPushButton {{
+                border: none;
+                background-color: transparent;
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(239, 68, 68, 0.2);
+            }}
+        """)
+        title_layout.addWidget(self.btn_close)
+        container_layout.addWidget(self.title_bar)
+        
+        # Search Line Edit
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("搜索类别名称...")
+        
+        search_icon = QIcon("ui/icon/magnifying-glass.svg")
+        if is_dark_theme:
+            search_icon = self.set_icon_color(search_icon, QColor("#94A3B8"))
+        else:
+            search_icon = self.set_icon_color(search_icon, QColor("#64748B"))
+        self.search_edit.addAction(search_icon, QLineEdit.LeadingPosition)
+        
+        self.search_edit.textChanged.connect(self.on_search_changed)
+        container_layout.addWidget(self.search_edit)
+        
+        # Select All Checkbox
+        self.chk_all = QCheckBox("全选 / 反选")
+        self.chk_all.setCursor(Qt.PointingHandCursor)
+        self.chk_all.setTristate(True)
+        self.chk_all.clicked.connect(self.on_chk_all_clicked)
+        container_layout.addWidget(self.chk_all)
+        
+        # List Widget
+        self.list_widget = QListWidget()
+        self.list_widget.itemChanged.connect(self.on_item_changed)
+        self.list_widget.itemClicked.connect(self.on_item_clicked)
+        self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
+        container_layout.addWidget(self.list_widget)
+        
+        # Populate List
+        self._updating_list = True
+        sorted_cids = sorted(self.class_names.keys())
+        for cid in sorted_cids:
+            cname = self.class_names[cid]
+            item = QListWidgetItem(f"{cid}: {cname}")
+            item.setData(Qt.UserRole, cid)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            
+            is_checked = (cid in self.initial_selected_ids)
+            item.setCheckState(Qt.Checked if is_checked else Qt.Unchecked)
+            self.list_widget.addItem(item)
+            
+        self._updating_list = False
+        self.update_chk_all_state()
+        
+        # Bottom Buttons
+        btn_layout = QHBoxLayout()
+        self.btn_reset = QPushButton("重置全选")
+        self.btn_reset.setCursor(Qt.PointingHandCursor)
+        self.btn_reset.clicked.connect(self.reset_to_all)
+        
+        self.btn_confirm = QPushButton("确认")
+        self.btn_confirm.setCursor(Qt.PointingHandCursor)
+        self.btn_confirm.clicked.connect(self.accept_selection)
+        
+        self.btn_cancel = QPushButton("取消")
+        self.btn_cancel.setCursor(Qt.PointingHandCursor)
+        self.btn_cancel.clicked.connect(self.reject)
+        
+        btn_layout.addWidget(self.btn_reset)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_cancel)
+        btn_layout.addWidget(self.btn_confirm)
+        container_layout.addLayout(btn_layout)
+        
+        # Set Stylesheet for inner elements
+        self.setStyleSheet(f"""
+            QWidget {{
+                background-color: transparent;
+                color: {text_color};
+            }}
+            #MainContainer {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
+                border-radius: 12px;
+            }}
+            QLineEdit {{
+                background-color: {list_bg};
+                border: 1px solid {border_color};
+                border-radius: 8px;
+                padding: 8px 12px;
+                color: {text_color};
+                font-size: 13px;
+            }}
+            QLineEdit:focus {{
+                border-color: {primary_color};
+            }}
+            QCheckBox {{
+                color: {text_color};
+                font-weight: bold;
+                font-size: 13px;
+                spacing: 8px;
+            }}
+            QListWidget {{
+                background-color: {list_bg};
+                border: 1px solid {border_color};
+                border-radius: 8px;
+                padding: 4px;
+            }}
+            QListWidget::item {{
+                padding: 6px 10px;
+                border-radius: 6px;
+                color: {text_color};
+            }}
+            QListWidget::item:hover {{
+                background-color: {item_hover_bg};
+            }}
+            QPushButton {{
+                border: 1px solid {border_color};
+                border-radius: 8px;
+                padding: 8px 16px;
+                font-weight: bold;
+                font-size: 13px;
+                background-color: {list_bg};
+                color: {text_color};
+            }}
+            QPushButton:hover {{
+                background-color: {item_hover_bg};
+            }}
+        """)
+        
+        self.btn_confirm.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {primary_color};
+                color: white;
+                border: none;
+            }}
+            QPushButton:hover {{
+                background-color: {btn_hover_bg};
+            }}
+        """)
+        
+        # Install global event filter to close on clicking outside
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance().installEventFilter(self)
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            # Check if click is on the title bar or label
+            child = self.childAt(event.position().toPoint())
+            if child in [self.title_bar, self.title_label] or (child and child.parent() == self.title_bar and child != self.btn_close):
+                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and hasattr(self, '_drag_pos'):
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def event(self, event):
+        if event.type() == QEvent.WindowDeactivate:
+            self.reject()
+            return True
+        return super().event(event)
+            
+    def on_search_changed(self, text):
+        text = text.lower().strip()
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            item.setHidden(text not in item.text().lower())
+        self.update_chk_all_state()
+            
+    def on_chk_all_clicked(self):
+        # Determine target state: if any visible item is currently unchecked, we want to check all.
+        # Otherwise (all checked), we want to uncheck all.
+        any_unchecked = False
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if not item.isHidden() and item.checkState() == Qt.Unchecked:
+                any_unchecked = True
+                break
+                
+        self._updating_list = True
+        target_state = Qt.Checked if any_unchecked else Qt.Unchecked
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if not item.isHidden():
+                item.setCheckState(target_state)
+        self._updating_list = False
+        self.update_chk_all_state()
+        
+    def on_item_changed(self, item):
+        if getattr(self, '_updating_list', False):
+            return
+        self.update_chk_all_state()
+        
+    def on_item_clicked(self, item):
+        from PySide6.QtGui import QCursor
+        pos = self.list_widget.viewport().mapFromGlobal(QCursor.pos())
+        if pos.x() > 35:
+            self._updating_list = True
+            new_state = Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked
+            item.setCheckState(new_state)
+            self._updating_list = False
+            self.update_chk_all_state()
+            
+    def on_item_double_clicked(self, item):
+        self._updating_list = True
+        new_state = Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked
+        item.setCheckState(new_state)
+        self._updating_list = False
+        self.update_chk_all_state()
+        
+    def update_chk_all_state(self):
+        checked_count = 0
+        total_count = 0
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if not item.isHidden():
+                total_count += 1
+                if item.checkState() == Qt.Checked:
+                    checked_count += 1
+                    
+        if total_count == 0:
+            self.chk_all.setCheckState(Qt.Unchecked)
+        elif checked_count == total_count:
+            self.chk_all.setCheckState(Qt.Checked)
+        elif checked_count == 0:
+            self.chk_all.setCheckState(Qt.Unchecked)
+        else:
+            self.chk_all.setCheckState(Qt.PartiallyChecked)
+        
+    def reset_to_all(self):
+        self._updating_list = True
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            item.setCheckState(Qt.Checked)
+        self._updating_list = False
+        self.update_chk_all_state()
+        
+    def accept_selection(self):
+        checked_ids = []
+        total_count = self.list_widget.count()
+        
+        for i in range(total_count):
+            item = self.list_widget.item(i)
+            if item.checkState() == Qt.Checked:
+                cid = item.data(Qt.UserRole)
+                checked_ids.append(cid)
+                
+        if len(checked_ids) == total_count or len(checked_ids) == 0:
+            self.selected_ids = []
+        else:
+            self.selected_ids = checked_ids
+            
+        self.accept()
+
+    def set_icon_color(self, icon, color):
+        from PySide6.QtGui import QPainter, QIcon
+        pixmap = icon.pixmap(100, 100)
+        painter = QPainter(pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(pixmap.rect(), color)
+        painter.end()
+        new_icon = QIcon()
+        new_icon.addPixmap(pixmap, QIcon.Normal, QIcon.On)
+        new_icon.addPixmap(pixmap, QIcon.Normal, QIcon.Off)
+        return new_icon
+
+    def changeEvent(self, event):
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.ActivationChange:
+            if not self.isActiveWindow():
+                self.reject()
+        super().changeEvent(event)
+
+    def cleanup_filter(self):
+        try:
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().removeEventFilter(self)
+        except Exception:
+            pass
+
+    def reject(self):
+        self.cleanup_filter()
+        super().reject()
+
+    def accept(self):
+        self.cleanup_filter()
+        super().accept()
+
+    def closeEvent(self, event):
+        self.cleanup_filter()
+        super().closeEvent(event)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonPress:
+            from PySide6.QtGui import QCursor
+            if not self.geometry().contains(QCursor.pos()):
+                self.reject()
+        return super().eventFilter(obj, event)
+
+
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
@@ -448,6 +1027,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_dir = None
         self.class_list = []
         self.current_format = "json"
+        self.yolo_filtered_class_ids = []
 
         self.modeLabel = QLabel("模式: 矩形标注")
         self.statusBar.addWidget(self.modeLabel)
@@ -494,6 +1074,71 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 初始化选择框状态和可用性
         self.update_selected_count()
 
+        # 初始化 samPromptBtn 样式与交互 (Gemini 3 Style)
+        self.update_prompt_btn_icon()
+        self.samPromptBtn.setEnabled(False)
+        self.samPromptBtn.show()
+        
+        # 绑定文字变化信号以实现动态状态切换
+        self.samPromptInput.textChanged.connect(self.on_prompt_text_changed)
+        
+        # 安装事件过滤器以实现 focus 边框变化
+        self.samPromptInput.installEventFilter(self)
+
+    def update_prompt_btn_icon(self):
+        from PySide6.QtCore import QSize
+        from PySide6.QtGui import QIcon, QColor, QPainter
+        active_color = QColor(255, 255, 255)
+        if self.is_dark_theme:
+            disabled_color = QColor(255, 255, 255, 60)
+        else:
+            disabled_color = QColor(100, 116, 139, 120)  # Slate gray for perfect visibility in light theme!
+            
+        icon = QIcon("ui/icon/arrow-up.svg")
+        
+        # Active Pixmap
+        active_pixmap = icon.pixmap(100, 100)
+        painter = QPainter(active_pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(active_pixmap.rect(), active_color)
+        painter.end()
+        
+        # Disabled Pixmap
+        disabled_pixmap = icon.pixmap(100, 100)
+        dpainter = QPainter(disabled_pixmap)
+        dpainter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        dpainter.fillRect(disabled_pixmap.rect(), disabled_color)
+        dpainter.end()
+        
+        new_icon = QIcon()
+        new_icon.addPixmap(active_pixmap, QIcon.Normal, QIcon.On)
+        new_icon.addPixmap(active_pixmap, QIcon.Normal, QIcon.Off)
+        new_icon.addPixmap(disabled_pixmap, QIcon.Disabled, QIcon.On)
+        new_icon.addPixmap(disabled_pixmap, QIcon.Disabled, QIcon.Off)
+        
+        self.samPromptBtn.setIcon(new_icon)
+        self.samPromptBtn.setIconSize(QSize(16, 16))
+
+    def update_prompt_btn_state(self):
+        supports_text = self.samPromptInput.isEnabled()
+        has_text = bool(self.samPromptInput.text().strip())
+        self.samPromptBtn.setEnabled(supports_text and has_text)
+
+    def on_prompt_text_changed(self, text):
+        self.update_prompt_btn_state()
+
+    def eventFilter(self, watched, event):
+        if watched == getattr(self, 'samPromptInput', None):
+            if event.type() == QEvent.FocusIn:
+                self.samTextGroup.setProperty("focused", "true")
+                self.samTextGroup.style().unpolish(self.samTextGroup)
+                self.samTextGroup.style().polish(self.samTextGroup)
+            elif event.type() == QEvent.FocusOut:
+                self.samTextGroup.setProperty("focused", "false")
+                self.samTextGroup.style().unpolish(self.samTextGroup)
+                self.samTextGroup.style().polish(self.samTextGroup)
+        return super().eventFilter(watched, event)
+
     def update_predict_icon(self):
         self.btnPredict.setIcon(QIcon(self.predict_movie.currentPixmap()))
 
@@ -533,6 +1178,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
         if key in SAM_MODEL_MAP or model_info.get("type", "").startswith("sam"):
             self.btnPredict.hide()
+            self.btnClassFilter.hide()
+            self.yolo_filtered_class_ids = []
             self.current_yolo_predictor = None
             if key not in SAM_MODEL_MAP:
                 SAM_MODEL_MAP[key] = model_info
@@ -562,16 +1209,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         
                     self.update_model_status(True, f"已加载 YOLO 模型: {display_name}")
                     self.btnPredict.show()
+                    self.btnClassFilter.show()
+                    self.btnClassFilter.setText(" 全部类别 ▾")
+                    self.yolo_filtered_class_ids = []
                 except Exception as e:
                     import traceback
                     traceback.print_exc()
                     self.update_model_status(False, f"加载 YOLO 模型失败: {str(e)}")
                     self.btnPredict.hide()
+                    self.btnClassFilter.hide()
+                    self.yolo_filtered_class_ids = []
             else:
                 self.update_model_status(False, f"未找到对应的 YOLO 模型文件")
                 self.btnPredict.hide()
+                self.btnClassFilter.hide()
+                self.yolo_filtered_class_ids = []
         else:
             self.btnPredict.hide()
+            self.btnClassFilter.hide()
+            self.yolo_filtered_class_ids = []
             self.current_yolo_predictor = None
             self.sam_client.cleanup()
             self.sam_client.current_model_key = key
@@ -582,9 +1238,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 只有不在点标注模式下才启用，因为点标注即使是SAM3也不可用
         if self.scene.mode != CanvasMode.POINT:
             self.samPromptInput.setEnabled(supports_text)
-            self.samPromptBtn.setEnabled(supports_text)
+            self.update_prompt_btn_state()
             if supports_text:
-                self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog)")
+                self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog、cat)")
             else:
                 self.samPromptInput.setPlaceholderText(f"{display_name} 不支持提示词")
 
@@ -642,6 +1298,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btnSmartMode.toggled.connect(lambda checked: self.samSwitch.setChecked(True) if checked else None)
 
         self.btnPredict.clicked.connect(self.on_predict_clicked)
+        self.btnClassFilter.clicked.connect(self.on_class_filter_clicked)
 
         self.samPromptBtn.clicked.connect(self.trigger_sam_prompt)
         self.samPromptInput.returnPressed.connect(self.trigger_sam_prompt)
@@ -693,7 +1350,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 img_paths=checked_paths,
                 current_format=self.current_format,
                 class_list=self.class_list,
-                template_manager=self.template_manager
+                template_manager=self.template_manager,
+                classes=self.yolo_filtered_class_ids,
+                overwrite=self.btnOverwrite.isChecked()
             )
 
             # 连接进度更新
@@ -759,7 +1418,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.predict_movie.start()
             self.btnPredict.setEnabled(False)
             
-            self.yolo_worker = YoloPredictorWorker(self.current_yolo_predictor, self.current_image_path)
+            self.yolo_worker = YoloPredictorWorker(self.current_yolo_predictor, self.current_image_path, classes=self.yolo_filtered_class_ids)
             self.yolo_worker.finished.connect(self.on_predict_finished)
             self.yolo_worker.error.connect(self.on_predict_error)
             self.yolo_worker.start()
@@ -770,7 +1429,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btnPredict.setIcon(QIcon("ui/icon/lightning-fill.svg"))
         self.btnPredict.setEnabled(True)
         
+        if self.btnOverwrite.isChecked():
+            self.scene.clear_shapes()
+            self.update_annotation_tree()
+            
         if not shapes:
+            if self.btnOverwrite.isChecked():
+                self.auto_save_annotation()
+                self.push_state()
             DialogOver(self, "未找到任何预测结果", "提示", "info")
             self.statusBar.showMessage("预测完成，未找到任何结果", 3000)
             self._update_help_text(self.scene.mode)
@@ -778,10 +1444,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             
         # Get existing shapes for deduplication
         existing_shapes = []
-        for item in self.scene.items():
-            from labelpaw.graphics.shapes import BaseShape
-            if isinstance(item, BaseShape) and not getattr(item, 'is_temp', False):
-                existing_shapes.append(item)
+        if not self.btnOverwrite.isChecked():
+            for item in self.scene.items():
+                from labelpaw.graphics.shapes import BaseShape
+                if isinstance(item, BaseShape) and not getattr(item, 'is_temp', False):
+                    existing_shapes.append(item)
             
         # Add shapes
         class_counts = {}
@@ -926,6 +1593,43 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         DialogOver(self, f"预测失败: {err_msg}", "错误", "danger")
         self.statusBar.showMessage("预测出错", 3000)
         self._update_help_text(self.scene.mode)
+
+    def on_class_filter_clicked(self):
+        if not getattr(self, 'current_yolo_predictor', None):
+            DialogOver(self, "YOLO 模型未加载或初始化失败！", "提示", "warning")
+            return
+            
+        model = self.current_yolo_predictor.model
+        if not hasattr(model, 'names') or not model.names:
+            DialogOver(self, "未能从当前 YOLO 模型中提取类别列表！", "提示", "warning")
+            return
+            
+        dialog = YoloClassFilterDialog(
+            class_names=model.names,
+            selected_ids=self.yolo_filtered_class_ids,
+            is_dark_theme=self.is_dark_theme,
+            parent=self
+        )
+        
+        # Position dialog right below the btnClassFilter button
+        try:
+            pos = self.btnClassFilter.mapToGlobal(self.btnClassFilter.rect().bottomLeft())
+            # Align the dialog center-ish with the button (offsetting x by -60 pixels)
+            dialog.move(pos.x() - 60, pos.y() + 5)
+        except Exception as e:
+            print(f"Failed to position class filter dialog: {e}")
+            
+        if dialog.exec() == QDialog.Accepted:
+            self.yolo_filtered_class_ids = dialog.selected_ids
+            # Update button text dynamically
+            if not self.yolo_filtered_class_ids:
+                self.btnClassFilter.setText(" 全部类别 ▾")
+            elif len(self.yolo_filtered_class_ids) == 1:
+                cid = self.yolo_filtered_class_ids[0]
+                cname = model.names[cid]
+                self.btnClassFilter.setText(f" {cname} ▾")
+            else:
+                self.btnClassFilter.setText(f" 已选 {len(self.yolo_filtered_class_ids)} 类 ▾")
 
     def _on_class_added_from_widget(self, cls_name):
         """从 ClassListWidget 添加新类别的回调"""
@@ -1237,7 +1941,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 prompts=prompts,
                 current_format=self.current_format,
                 class_list=self.class_list,
-                canvas_mode=self.scene.mode
+                canvas_mode=self.scene.mode,
+                overwrite=self.btnOverwrite.isChecked()
             )
 
             # 连接进度更新
@@ -1303,16 +2008,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not results:
             self.helpLabel.setText(f"提取完成: 未发现关于 '{prompt_text}' 的目标")
             self.helpLabel.setStyleSheet("color: red;")
+            if self.btnOverwrite.isChecked():
+                self.scene.clear_shapes()
+                self.update_annotation_tree()
+                self.auto_save_annotation()
+                self.push_state()
             return
 
         self.helpLabel.setText(f"提取完成: 成功抓取 {len(results)} 个 '{prompt_text}' 目标")
         self.helpLabel.setStyleSheet("color: green;")
 
         if prompt_text not in self.class_list:
-            # self.class_list.append(prompt_text)
-            # self.listClasses.addItem(prompt_text)
             self.add_class_to_list(prompt_text)
             self.save_classes()
+
+        if self.btnOverwrite.isChecked():
+            self.scene.clear_shapes()
 
         for res in results:
             if self.scene.mode == CanvasMode.RECT:
@@ -1341,7 +2052,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if hasattr(shape, 'set_color'):
                 shape.set_color(self.classListWidget.get_class_color(prompt_text))
 
+        self.update_annotation_tree()
         self.auto_save_annotation()
+        self.push_state()
 
     def delete_selected(self):
         for item in self.scene.selectedItems():
@@ -1479,6 +2192,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.btnDatasetTool.setIcon(self.set_icon_color(QIcon("ui/icon/wrench.svg"), self.current_icon_color))
             self.formatWidget.btn.setIcon(self.set_icon_color(QIcon("ui/icon/格式.svg"), self.current_icon_color))
         self.classListWidget.set_theme(self.is_dark_theme)
+        self.update_prompt_btn_icon()
 
     def show_author_info(self):
         dialog = AuthorInfoDialog(self)
@@ -1518,7 +2232,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         <h3>【SAM 智能辅助】</h3>
         <ul>
             <li><b>鼠标点选</b>：开启开关后，鼠标悬停预览，点击直接确认生成高精度轮廓。</li>
-            <li><b>提示词提取</b>：在右下角输入框输入目标名称（如: dog），按回车即可一键全图抓取并打好框！左侧选中的是“矩形”还是“多边形”格式。</li>
+            <li><b>提示词提取</b>：在右下角输入框输入目标名称（如: dog、cat），按回车即可一键全图抓取并打好框！左侧选中的是“矩形”还是“多边形”格式。</li>
         </ul>
         """
         QMessageBox.about(self, "LabelPaw 使用说明", help_text)
@@ -1582,16 +2296,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.scene.set_sam_enabled(checked)
         self._update_help_text(self.scene.mode)
         
-        # 同步更新顶部工具栏按钮
         if checked:
             self.btnModelSelector.show()
             if getattr(self, 'current_yolo_predictor', None) is not None:
                 self.btnPredict.show()
+                self.btnClassFilter.show()
             if not self.btnSmartMode.isChecked():
                 self.btnSmartMode.setChecked(True)
         else:
             self.btnModelSelector.hide()
             self.btnPredict.hide()
+            self.btnClassFilter.hide()
             if not self.btnDrawMode.isChecked():
                 self.btnDrawMode.setChecked(True)
 
@@ -1668,10 +2383,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             
             supports_text = self.sam_client.supports_text_prompt()
             self.samPromptInput.setEnabled(supports_text)
-            self.samPromptBtn.setEnabled(supports_text)
+            self.update_prompt_btn_state()
             
             if supports_text:
-                self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog)")
+                self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog、cat)")
             else:
                 self.samPromptInput.setPlaceholderText("当前模型不支持提示词")
                 

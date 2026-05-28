@@ -135,7 +135,7 @@ QLabel { color: #cbd5e1; background: transparent; }
     background-color: #0F172A;
     border-left: 1px solid #334155;
 }
-#classesContainer, #filesContainer, #samTextGroup, #rightSplitter, #filesHeader {
+#classesContainer, #filesContainer, #rightSplitter, #filesHeader {
     background-color: transparent;
 }
 #rightPanelTitle {
@@ -252,32 +252,58 @@ QLabel { color: #cbd5e1; background: transparent; }
 
 /* Bottom Right Widgets */
 
-#samPromptInput {
-    border: 2px solid #334155;
-    border-radius: 14px;
-    padding: 6px 14px;
-    font-size: 13px;
+#samTextGroup {
     background-color: #0F172A;
-    color: #F8FAFC;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    margin: 0px;
 }
-#samPromptInput:focus {
-    border: 2px solid #22C55E;
+#samTextGroup[focused="true"] {
+    border: 1px solid #22C55E;
+}
+
+#samPromptInput {
+    border: none;
+    background-color: transparent;
+    color: #F8FAFC;
+    font-size: 13px;
+    padding: 2px 4px;
 }
 
 #samPromptBtn {
     background-color: #22C55E;
-    color: #020617;
     border: none;
     border-radius: 14px;
-    padding: 8px;
-    font-weight: bold;
-    font-size: 13px;
+    padding: 0px;
 }
 #samPromptBtn:hover {
     background-color: #4ade80;
 }
 #samPromptBtn:pressed {
     background-color: #16a34a;
+}
+#samPromptBtn:disabled {
+    background-color: #1E293B;
+}
+
+#btnOverwrite {
+    background-color: transparent;
+    border: 1px solid #334155;
+    color: #94A3B8;
+    border-radius: 11px;
+    padding: 2px 8px;
+    font-weight: 600;
+    font-size: 11px;
+}
+#btnOverwrite:hover {
+    background-color: #1E293B;
+    color: #F8FAFC;
+    border-color: #475569;
+}
+#btnOverwrite:checked {
+    background-color: rgba(34, 197, 94, 0.15);
+    border: 1px solid #22C55E;
+    color: #22C55E;
 }
 
 #btnDatasetTool {
@@ -301,7 +327,7 @@ QLabel { color: #cbd5e1; background: transparent; }
     color: #020617;
 }
 
-#btnModelSelector, #btnPredict {
+#btnModelSelector, #btnPredict, #btnClassFilter {
     border: none;
     background-color: transparent;
     color: #F8FAFC;
@@ -310,7 +336,7 @@ QLabel { color: #cbd5e1; background: transparent; }
     font-weight: bold;
     font-size: 14px;
 }
-#btnModelSelector:hover, #btnPredict:hover { background-color: #334155; }
+#btnModelSelector:hover, #btnPredict:hover, #btnClassFilter:hover { background-color: #334155; }
 #btnModelSelector::menu-indicator { image: none; }
 
 #modelMenu {
@@ -548,7 +574,7 @@ QLabel { color: #334155; background: transparent; }
     background-color: #FFFFFF;
     border-left: 1px solid #E5E5E5;
 }
-#classesContainer, #filesContainer, #samTextGroup, #rightSplitter, #filesHeader {
+#classesContainer, #filesContainer, #rightSplitter, #filesHeader {
     background-color: transparent;
 }
 #rightPanelTitle {
@@ -665,32 +691,58 @@ QLabel { color: #334155; background: transparent; }
 
 /* Bottom Right Widgets */
 
-#samPromptInput {
-    border: 2px solid #CBD5E1;
-    border-radius: 14px;
-    padding: 6px 14px;
-    font-size: 13px;
+#samTextGroup {
     background-color: #FFFFFF;
-    color: #0F172A;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    margin: 0px;
 }
-#samPromptInput:focus {
-    border: 2px solid #22C55E;
+#samTextGroup[focused="true"] {
+    border: 1px solid #22C55E;
+}
+
+#samPromptInput {
+    border: none;
+    background-color: transparent;
+    color: #0F172A;
+    font-size: 13px;
+    padding: 2px 4px;
 }
 
 #samPromptBtn {
     background-color: #22C55E;
-    color: #FFFFFF;
     border: none;
     border-radius: 14px;
-    padding: 8px;
-    font-weight: bold;
-    font-size: 13px;
+    padding: 0px;
 }
 #samPromptBtn:hover {
     background-color: #4ade80;
 }
 #samPromptBtn:pressed {
     background-color: #16a34a;
+}
+#samPromptBtn:disabled {
+    background-color: #E2E8F0;
+}
+
+#btnOverwrite {
+    background-color: transparent;
+    border: 1px solid #E2E8F0;
+    color: #64748B;
+    border-radius: 11px;
+    padding: 2px 8px;
+    font-weight: 600;
+    font-size: 11px;
+}
+#btnOverwrite:hover {
+    background-color: #F1F5F9;
+    color: #0F172A;
+    border-color: #CBD5E1;
+}
+#btnOverwrite:checked {
+    background-color: rgba(34, 197, 94, 0.08);
+    border: 1px solid #22C55E;
+    color: #16a34a;
 }
 
 #btnDatasetTool {
@@ -714,7 +766,7 @@ QLabel { color: #334155; background: transparent; }
     color: #0F172A;
 }
 
-#btnModelSelector, #btnPredict {
+#btnModelSelector, #btnPredict, #btnClassFilter {
     border: none;
     background-color: transparent;
     color: #0F172A;
@@ -723,7 +775,7 @@ QLabel { color: #334155; background: transparent; }
     font-weight: bold;
     font-size: 14px;
 }
-#btnModelSelector:hover, #btnPredict:hover { background-color: #E2E8F0; }
+#btnModelSelector:hover, #btnPredict:hover, #btnClassFilter:hover { background-color: #E2E8F0; }
 #btnModelSelector::menu-indicator { image: none; }
 
 #modelMenu {

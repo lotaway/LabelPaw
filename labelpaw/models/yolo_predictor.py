@@ -9,14 +9,15 @@ class YoloPredictorWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
     
-    def __init__(self, predictor, image_path):
+    def __init__(self, predictor, image_path, classes=None):
         super().__init__()
         self.predictor = predictor
         self.image_path = image_path
+        self.classes = classes
         
     def run(self):
         try:
-            shapes = self.predictor.predict_sync(self.image_path)
+            shapes = self.predictor.predict_sync(self.image_path, classes=self.classes)
             self.finished.emit(shapes)
         except Exception as e:
             self.error.emit(str(e))
@@ -43,11 +44,11 @@ class YoloPredictor:
         except:
             pass
             
-    def predict(self, image_path):
+    def predict(self, image_path, classes=None):
         """兼容旧的同步调用"""
-        return self.predict_sync(image_path)
+        return self.predict_sync(image_path, classes=classes)
     
-    def predict_sync(self, image_path):
+    def predict_sync(self, image_path, classes=None):
         """
         预测单张图片并解析结果。
         返回 shapes 列表，每个元素是个字典：
@@ -63,7 +64,10 @@ class YoloPredictor:
         if not os.path.exists(image_path):
             return []
             
-        results = self.model(image_path)
+        if classes is not None and len(classes) > 0:
+            results = self.model(image_path, classes=classes)
+        else:
+            results = self.model(image_path)
         if not results:
             return []
             
@@ -178,6 +182,11 @@ class YoloPredictor:
                     
                 parsed_shapes.append(shape_data)
                 
+        # 兼容性冗余过滤，确保无论哪种底层版本都能 100% 滤除其他类别
+        if classes is not None and len(classes) > 0:
+            allowed_names = {names[cid] for cid in classes if cid in names}
+            parsed_shapes = [s for s in parsed_shapes if s["label"] in allowed_names]
+            
         return parsed_shapes
 
 if __name__ == "__main__":

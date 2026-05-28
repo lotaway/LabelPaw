@@ -1,7 +1,7 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QToolBar, QListWidget, QGraphicsView,
-                               QLabel, QLineEdit, QPushButton, QStatusBar, QMenu, QComboBox, QSizePolicy, QAbstractItemView, QSplitter, QCheckBox)
+                               QLabel, QLineEdit, QPushButton, QStatusBar, QMenu, QComboBox, QSizePolicy, QAbstractItemView, QSplitter, QCheckBox, QFrame)
 from ui.annotation_tree_widget import AnnotationTreeWidget
 from PySide6.QtCore import Qt, Signal, QRect, QSize
 from PySide6.QtGui import QAction, QActionGroup, QPainter, QColor, QFont, QIcon, QPixmap
@@ -485,6 +485,12 @@ class Ui_MainWindow(object):
         self.btnPredict.setCursor(Qt.PointingHandCursor)
         self.btnPredict.setToolTip("使用模型进行预测 (快捷键: M)")
         self.btnPredict.hide()  # 仅在非SAM模型下显示
+
+        self.btnClassFilter = QPushButton(" 全部类别 ▾")
+        self.btnClassFilter.setObjectName("btnClassFilter")
+        self.btnClassFilter.setCursor(Qt.PointingHandCursor)
+        self.btnClassFilter.setToolTip("选择YOLO模型预测的类别过滤")
+        self.btnClassFilter.hide()  # 仅在加载YOLO模型下显示
         
         # Segmented toggle effect
         self.btnDrawMode.toggled.connect(lambda checked: self.btnSmartMode.setChecked(not checked) if checked else None)
@@ -537,6 +543,7 @@ class Ui_MainWindow(object):
         tb_layout.addWidget(self.btnSmartMode)
         tb_layout.addWidget(self.btnModelSelector)
         tb_layout.addWidget(self.btnPredict)
+        tb_layout.addWidget(self.btnClassFilter)
         tb_layout.addWidget(sep1)
         tb_layout.addWidget(self.templateWidget)
         self.sepTemplate = QLabel("|")
@@ -612,6 +619,13 @@ class Ui_MainWindow(object):
         self.chkSelectAll.setCursor(Qt.PointingHandCursor)
         self.chkSelectAll.setTristate(False)
 
+        self.btnOverwrite = QPushButton("覆盖")
+        self.btnOverwrite.setObjectName("btnOverwrite")
+        self.btnOverwrite.setCheckable(True)
+        self.btnOverwrite.setCursor(Qt.PointingHandCursor)
+        self.btnOverwrite.setToolTip("覆盖已有标注框")
+        self.btnOverwrite.setFixedHeight(22)
+
         self.btnDeleteFiles = QPushButton()
         self.btnDeleteFiles.setObjectName("btnDeleteFiles")
         self.btnDeleteFiles.setCursor(Qt.PointingHandCursor)
@@ -640,6 +654,7 @@ class Ui_MainWindow(object):
         self.labelSelectedCount.setStyleSheet("color: #64748B; font-size: 11px;")
         
         filesHeaderLayout.addWidget(self.chkSelectAll)
+        filesHeaderLayout.addWidget(self.btnOverwrite)
         filesHeaderLayout.addWidget(self.btnDeleteFiles)
         filesHeaderLayout.addWidget(self.labelFiles)
         filesHeaderLayout.addWidget(self.labelSelectedCount)
@@ -663,23 +678,34 @@ class Ui_MainWindow(object):
         self.dockLayout.addWidget(self.rightSplitter)
 
         # ==== 右下角区域 ====
-        self.samTextGroup = QWidget()
+        # 提示词输入与提取按钮的精美卡片式聊天框 (DeepSeek / Gemini 3 Style)
+        self.samTextGroup = QFrame()
         self.samTextGroup.setObjectName("samTextGroup")
+        
         textLayout = QVBoxLayout(self.samTextGroup)
-        textLayout.setContentsMargins(0, 5, 0, 15)
-        textLayout.setSpacing(8)
+        textLayout.setContentsMargins(12, 10, 10, 8)
+        textLayout.setSpacing(6)
 
-        # 提示词输入与提取按钮
+        # 顶部输入框：无边框，透明背景
         self.samPromptInput = QLineEdit()
         self.samPromptInput.setPlaceholderText("输入提示词提取 (如: dog)")
         self.samPromptInput.setObjectName("samPromptInput")
-
-        self.samPromptBtn = QPushButton("✨ 提交")
-        self.samPromptBtn.setCursor(Qt.PointingHandCursor)
-        self.samPromptBtn.setObjectName("samPromptBtn")
-
+        self.samPromptInput.setFrame(False)
         textLayout.addWidget(self.samPromptInput)
-        textLayout.addWidget(self.samPromptBtn)
+
+        # 底部操作栏
+        bottomLayout = QHBoxLayout()
+        bottomLayout.setContentsMargins(0, 0, 0, 0)
+
+        bottomLayout.addStretch()
+
+        self.samPromptBtn = QPushButton()
+        self.samPromptBtn.setObjectName("samPromptBtn")
+        self.samPromptBtn.setCursor(Qt.PointingHandCursor)
+        self.samPromptBtn.setFixedSize(28, 28)
+        bottomLayout.addWidget(self.samPromptBtn)
+
+        textLayout.addLayout(bottomLayout)
 
         self.dockLayout.addWidget(self.samTextGroup)
 
