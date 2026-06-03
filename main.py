@@ -4,7 +4,7 @@ import json
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QInputDialog, QMessageBox, QLabel, \
     QListWidgetItem, QDialog, QMenu, QAbstractItemView, QProgressBar, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, \
     QCheckBox, QListWidget, QFrame, QWidget
-from PySide6.QtCore import Qt, QPointF, QRectF, QThread, Signal, QSize, QEvent
+from PySide6.QtCore import Qt, QPointF, QRectF, QThread, Signal, QSize, QEvent, QSettings
 from PySide6.QtGui import QPainter, QIcon, QPixmap, QColor, QAction, QActionGroup, QPolygonF, QMovie
 from main_dataset_tool import DatasetToolWindow
 import cv2
@@ -1084,6 +1084,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
         # 安装事件过滤器以实现 focus 边框变化
         self.samPromptInput.installEventFilter(self)
+
+        # 恢复上次关闭时的标注路径和图片
+        self.restore_last_state()
 
     def update_prompt_btn_icon(self):
         from PySide6.QtCore import QSize
@@ -2576,7 +2579,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.chkSelectAll.blockSignals(False)
 
     def open_dir(self):
-        dir_path = QFileDialog.getExistingDirectory(self, "选择图片目录")
+        dir_path = QFileDialog.getExistingDirectory(self, "选择图片目录", self.current_dir or "")
         if dir_path:
             self.current_dir = dir_path
             self.listFiles.clear()
@@ -3030,7 +3033,48 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def closeEvent(self, event):
         self.auto_save_annotation()
         self.sam_client.cleanup()
+
+        # 记录上次的状态
+        settings = QSettings("luohuabuxiema", "LabelPaw")
+        if self.current_dir:
+            settings.setValue("last_dir", self.current_dir)
+        else:
+            settings.setValue("last_dir", "")
+        if self.current_image_path:
+            settings.setValue("last_image", self.current_image_path)
+        else:
+            settings.setValue("last_image", "")
+
         super().closeEvent(event)
+
+    def restore_last_state(self):
+        settings = QSettings("luohuabuxiema", "LabelPaw")
+        last_dir = settings.value("last_dir", "")
+        last_image = settings.value("last_image", "")
+
+        if last_dir and os.path.exists(last_dir):
+            self.current_dir = last_dir
+            self.listFiles.clear()
+            self.load_classes(last_dir)
+            self.listFiles.blockSignals(True)
+            target_row = -1
+            for f in os.listdir(last_dir):
+                if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                    full_path = os.path.join(last_dir, f)
+                    item = QListWidgetItem(full_path)
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Unchecked)
+                    self.listFiles.addItem(item)
+                    if last_image and os.path.normpath(full_path) == os.path.normpath(last_image):
+                        target_row = self.listFiles.count() - 1
+            self.listFiles.blockSignals(False)
+            self.update_selected_count()
+
+            if self.listFiles.count() > 0:
+                if target_row != -1:
+                    self.listFiles.setCurrentRow(target_row)
+                else:
+                    self.listFiles.setCurrentRow(0)
 
     def keyPressEvent(self, event):
         key = event.key()
