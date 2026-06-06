@@ -65,17 +65,17 @@ The system is built based on PySide6 and integrates the **SAM2**, **SAM3**, and 
 
 ### 1. Basic Environment Dependencies
 
-Python 3.10+ is recommended.
+Python 3.12+ is recommended.
 
 Create a virtual environment with the following command:
 
 ```bash
-conda create -n py311 python==3.11.5
+conda create -n py312 python==3.12.12
 ```
 Activate the newly created virtual environment:
 
 ```bash
-conda activate py311 
+conda activate py312 
 ```
 
 
@@ -140,8 +140,8 @@ After configuring PyTorch, run the following command in your virtual environment
 pip install -r requirements.txt
 ```
 ```python
-pyside6~=6.4.2
-numpy~=1.24.4
+pyside6~=6.6.0
+numpy>=1.26,<2
 opencv-python~=4.11.0.86
 pillow~=10.4.0
 einops~=0.8.2
@@ -151,7 +151,7 @@ tqdm~=4.67.1
 iopath~=0.1.10
 matplotlib~=3.10.8
 timm~=1.0.26
-ftfy~=6.3.1
+ftfy==6.1.1
 psutil~=7.2.1
 torchmetrics~=1.5.0
 omegaconf~=2.3.0
