@@ -2256,14 +2256,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 else:
                     PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
                 LOCAL_WEIGHTS_DIR = os.path.join(PROJECT_ROOT, "weights")
-                HARDCODED_DEV_DIR = r"E:\11-AI\标注工具\weights"
-                
-                if os.path.exists(LOCAL_WEIGHTS_DIR):
-                    model_base_dir = LOCAL_WEIGHTS_DIR
-                elif os.path.exists(HARDCODED_DEV_DIR):
-                    model_base_dir = HARDCODED_DEV_DIR
-                else:
-                    model_base_dir = LOCAL_WEIGHTS_DIR
+
+                settings = QSettings("luohuabuxiema", "LabelPaw")
+                configured_weights_dir = settings.value("weights_dir", "")
+                env_weights_dir = os.environ.get("LABELPAW_WEIGHTS_DIR", "")
+
+                candidate_dirs = [
+                    env_weights_dir,
+                    configured_weights_dir,
+                    LOCAL_WEIGHTS_DIR,
+                ]
+
+                model_base_dir = next((d for d in candidate_dirs if d and os.path.exists(d)), LOCAL_WEIGHTS_DIR)
+
                 
                 default_pose_path = None
                 default_type = ""
